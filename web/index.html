@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👛</text></svg>" />
+  <title>Vanity Wallet Grinder - Solana Vanity Address Generator</title>
+  <meta name="description" content="Generate custom Solana vanity wallet addresses using your browser. 100% client-side, zero network requests, your keys never leave your machine." />
+  <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+  <meta name="referrer" content="no-referrer" />
+  <!-- No web fonts by design: typography uses locally installed / system fonts so the page makes ZERO network requests. -->
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+
+  <canvas id="matrix-bg"></canvas>
+
+  <!-- Floating blobs for glass effect -->
+  <div class="blob blob-1"></div>
+  <div class="blob blob-2"></div>
+  <div class="blob blob-3"></div>
+
+  <div id="page">
+
+    <header id="hero">
+      <div class="hero-content">
+        <h1 class="logo">VANITY<span class="accent">GRINDER</span></h1>
+        <p class="tagline">Custom Solana wallet addresses. Generated in your browser. Nothing leaves your machine.</p>
+      </div>
+    </header>
+
+    <section id="terminal-section">
+      <div id="terminal-window">
+        <div class="window-bar">
+          <div class="window-dots">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+          </div>
+          <div class="window-title">vanity-grinder</div>
+          <div class="window-dots" style="visibility:hidden">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+          </div>
+        </div>
+        <div id="crt">
+          <div id="scanlines"></div>
+          <div id="terminal">
+            <div id="output"></div>
+            <div id="input-line">
+              <span id="prompt">&gt; </span>
+              <input type="text" id="input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" autofocus />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Combined features + security -->
+    <section id="features">
+      <div class="glass-card">
+        <div class="card-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+        <h3>100% Client-Side</h3>
+        <p>All keypairs generated in your browser with Web Workers. Private keys never touch a server.</p>
+      </div>
+      <div class="glass-card">
+        <div class="card-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </div>
+        <h3>Multi-Threaded</h3>
+        <p>Parallel Web Workers across all CPU cores. Maximum grinding speed from your own hardware.</p>
+      </div>
+      <div class="glass-card">
+        <div class="card-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <h3>Zero Network</h3>
+        <p>No API calls. No analytics. No cookies. No tracking. CSP blocks all outbound connections.</p>
+      </div>
+      <div class="glass-card">
+        <div class="card-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        </div>
+        <h3>Memory Zeroing</h3>
+        <p>Raw secret key bytes wiped immediately after encoding. Non-matching keys destroyed on every cycle.</p>
+      </div>
+      <div class="glass-card">
+        <div class="card-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        </div>
+        <h3>Auto-Redact</h3>
+        <p>Keys removed from screen after 2 minutes. Clipboard auto-clears 60 seconds after copying.</p>
+      </div>
+      <div class="glass-card">
+        <div class="card-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        </div>
+        <h3>Auditable</h3>
+        <p>One runtime dependency: @noble/curves, a widely audited ed25519 library. Zero innerHTML — no XSS surface.</p>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section id="how-it-works">
+      <h2>How It Works</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-text">
+            <h4>Choose your pattern</h4>
+            <p>Pick the text you want in your Solana address using the Base58 alphabet.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-text">
+            <h4>Pick the position</h4>
+            <p>Prefix (start), suffix (end), or anywhere in the address.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-text">
+            <h4>Grind</h4>
+            <p>Your CPU generates thousands of keypairs per second until it finds a match.</p>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <div class="step-text">
+            <h4>Save your key</h4>
+            <p>Copy your private key and store it securely. It auto-redacts from the screen.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Difficulty table -->
+    <section id="difficulty">
+      <h2>Difficulty Estimates</h2>
+      <p class="section-sub">Longer patterns take exponentially more time. Case-insensitive helps.</p>
+      <div class="table-wrap glass-card table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>Length</th>
+              <th>Avg. Attempts</th>
+              <th>~Time @ 100k/s</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1 char</td><td>58</td><td>instant</td></tr>
+            <tr><td>2 chars</td><td>3,364</td><td>instant</td></tr>
+            <tr><td>3 chars</td><td>195,112</td><td>~2 seconds</td></tr>
+            <tr><td>4 chars</td><td>11.3M</td><td>~2 minutes</td></tr>
+            <tr><td>5 chars</td><td>656M</td><td>~1.8 hours</td></tr>
+            <tr><td>6 chars</td><td>38B</td><td>~4.4 days</td></tr>
+            <tr class="hard"><td>7+</td><td>2.2T+</td><td>months+</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="table-note">Suffix/anywhere. Prefix with rare first chars (lowercase, K-Z) takes ~17x longer.</p>
+    </section>
+
+    <footer id="footer">
+      <p>Vanity Wallet Grinder &mdash; open source. All computation runs locally. We never see your keys.</p>
+    </footer>
+
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

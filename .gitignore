@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+web/public/worker.js
+
+# Secrets / keys — this tool never needs them; these patterns are a guardrail
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id.json
+*keypair*.json
+wallet*.json
+
+# Local tooling / deploy / editor
+.vercel/
+.claude/
+.DS_Store
+Thumbs.db
+*.log

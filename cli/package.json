@@ -1,0 +1,35 @@
+{
+  "name": "vanity-grinder-cli",
+  "version": "2.0.0",
+  "description": "Multi-threaded Solana vanity address generator for the command line.",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "vanity-grinder": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "solana",
+    "vanity",
+    "address",
+    "wallet",
+    "keypair",
+    "ed25519",
+    "cli"
+  ],
+  "author": "DoradoDevs",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DoradoDevs/solana-vanity-address-generator.git",
+    "directory": "cli"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@noble/curves": "^2.0.1"
+  }
+}
