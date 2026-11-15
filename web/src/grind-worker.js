@@ -1,131 +1,112 @@
-/* Vanity Wallet Grinder — Web Worker (bundled via esbuild) */
+/* VanityGrinder — browser grind worker.
+   Bundled by Vite into a same-origin module worker.
+   Must not fetch, beacon, or open a socket. Matches go back to the page
+   through postMessage and nowhere else. */
 import { ed25519 } from "@noble/curves/ed25519.js";
+import { encodeBase58 } from "../../shared/base58.js";
+import { matchesAddress } from "../../shared/match.js";
+import { assembleSecretKey } from "../../shared/secret.js";
 
-// ── Inline Base58 encoder ───────────────────────────
-const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const POSITIONS = new Set(["prefix", "suffix", "prefix-or-suffix", "anywhere"]);
 
-function encodeBase58(bytes) {
-  let zeros = 0;
-  for (let i = 0; i < bytes.length && bytes[i] === 0; i++) zeros++;
+const selfTestOk =
+  encodeBase58(new Uint8Array(32)) === "11111111111111111111111111111111";
 
-  const digits = [];
-  for (let i = zeros; i < bytes.length; i++) {
-    let carry = bytes[i];
-    for (let j = 0; j < digits.length; j++) {
-      carry += digits[j] << 8;
-      digits[j] = carry % 58;
-      carry = (carry / 58) | 0;
-    }
-    while (carry > 0) {
-      digits.push(carry % 58);
-      carry = (carry / 58) | 0;
-    }
-  }
-
-  let result = "";
-  for (let i = 0; i < zeros; i++) result += ALPHABET[0];
-  for (let i = digits.length - 1; i >= 0; i--) result += ALPHABET[digits[i]];
-  return result;
+if (!selfTestOk) {
+  self.postMessage({ type: "error", message: "Base58 self-test failed" });
+} else {
+  self.postMessage({ type: "ready" });
 }
 
-// ── Helpers ─────────────────────────────────────────
+const yieldChannel = new MessageChannel();
+let yieldResolve = null;
+yieldChannel.port1.onmessage = () => {
+  const resolve = yieldResolve;
+  yieldResolve = null;
+  if (resolve) resolve();
+};
 
-function zeroOut(arr) {
-  if (arr && arr.fill) arr.fill(0);
+function yieldThread() {
+  return new Promise((resolve) => {
+    yieldResolve = resolve;
+    yieldChannel.port2.postMessage(null);
+  });
 }
-
-function check(address, target, position) {
-  switch (position) {
-    case "prefix":           return address.startsWith(target);
-    case "suffix":           return address.endsWith(target);
-    case "prefix-or-suffix": return address.startsWith(target) || address.endsWith(target);
-    case "anywhere":         return address.includes(target);
-    default: return false;
-  }
-}
-
-// ── Signal ready ────────────────────────────────────
-
-self.postMessage({ type: "ready" });
-
-// ── Grinding with setTimeout batching ───────────────
 
 let stopped = false;
+let running = false;
 
-self.onmessage = function (e) {
-  if (e.data.command === "stop") {
+self.onmessage = (event) => {
+  const data = event.data;
+  if (!data || data.command === "stop") {
     stopped = true;
     return;
   }
+  if (!selfTestOk || running) return;
+  running = true;
+  stopped = false;
+  grind(data).catch((err) => {
+    self.postMessage({ type: "error", message: err?.message || String(err) });
+  });
+};
 
-  const { pattern, position, caseSensitive } = e.data;
-  const matchTarget = caseSensitive ? pattern : pattern.toLowerCase();
+async function grind(data) {
+  const { pattern, position } = data;
+  const caseSensitive = data.caseSensitive === true;
 
-  // Auto-tune: start with a small batch, measure speed, then scale up
-  let batchSize = 20;
+  if (!pattern || !POSITIONS.has(position)) {
+    self.postMessage({ type: "error", message: "Bad grind settings" });
+    running = false;
+    return;
+  }
+
+  let batchSize = 50;
   let tuned = false;
+  const priv = new Uint8Array(32);
 
-  function runBatch() {
-    if (stopped) return;
-
-    try {
+  try {
+    while (!stopped) {
       const t0 = performance.now();
+      let pending = 0;
 
-      for (let i = 0; i < batchSize; i++) {
-        // @noble/curves: generate random 32-byte private key → derive public key
-        const privKey = ed25519.utils.randomSecretKey();
-        const pubKey = ed25519.getPublicKey(privKey);
-        const address = encodeBase58(pubKey);
-        const addr = caseSensitive ? address : address.toLowerCase();
+      for (let i = 0; i < batchSize && !stopped; i++) {
+        crypto.getRandomValues(priv);
+        const pub = ed25519.getPublicKey(priv);
+        const address = encodeBase58(pub);
+        pending++;
 
-        if (check(addr, matchTarget, position)) {
-          // Solana private key = 64 bytes (secret scalar 32 + public key 32)
-          const fullKey = new Uint8Array(64);
-          fullKey.set(privKey, 0);
-          fullKey.set(pubKey, 32);
-          const privateKeyB58 = encodeBase58(fullKey);
-          zeroOut(privKey);
-          zeroOut(pubKey);
-          zeroOut(fullKey);
-
+        if (matchesAddress(address, pattern, position, caseSensitive)) {
+          const privateKey = assembleSecretKey(priv, pub);
+          priv.fill(0);
           self.postMessage({
             type: "found",
             address,
-            privateKey: privateKeyB58,
-            attempts: batchSize,
+            privateKey,
+            attempts: pending,
           });
-          return;
+          pending = 0;
+        } else {
+          priv.fill(0);
         }
-
-        zeroOut(privKey);
-        zeroOut(pubKey);
       }
 
       const elapsed = performance.now() - t0;
-
-      // Auto-tune batch size to target ~200ms per batch
       if (!tuned && elapsed > 0) {
         const keysPerMs = batchSize / elapsed;
-        batchSize = Math.max(20, Math.min(5000, Math.round(keysPerMs * 200)));
+        batchSize = Math.max(50, Math.min(10000, Math.round(keysPerMs * 250)));
         tuned = true;
-        self.postMessage({
-          type: "speed",
-          keysPerSec: Math.round(keysPerMs * 1000),
-          batchSize,
-        });
       }
 
-      self.postMessage({ type: "progress", count: batchSize });
+      if (pending > 0) {
+        self.postMessage({ type: "progress", count: pending });
+        pending = 0;
+      }
 
-      // Yield so messages flush to main thread
-      setTimeout(runBatch, 0);
-    } catch (err) {
-      self.postMessage({
-        type: "error",
-        message: err.message || String(err),
-      });
+      if (stopped) break;
+      await yieldThread();
     }
+  } finally {
+    priv.fill(0);
+    running = false;
   }
-
-  runBatch();
-};
+}

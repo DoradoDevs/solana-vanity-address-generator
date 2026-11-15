@@ -3,11 +3,16 @@ import { Worker } from "node:worker_threads";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  validatePattern,
+  describeJob,
+  formatAttempts,
+  formatDuration,
+  formatEstimate,
+  DEFAULT_KEYS_PER_THREAD,
+} from "../shared/grind-math.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const BASE58_CHARS = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-const INVALID_CHARS = ["0", "O", "I", "l"];
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -18,80 +23,8 @@ function ask(question) {
   return new Promise((resolve) => rl.question(question, resolve));
 }
 
-function validatePattern(pattern) {
-  const errors = [];
-  for (const ch of pattern) {
-    if (INVALID_CHARS.includes(ch) || !BASE58_CHARS.includes(ch)) {
-      errors.push(ch);
-    }
-  }
-  return errors;
-}
-
-// Solana addresses are 32 bytes Base58-encoded to 43-44 chars.
-// ~94% of addresses are 44 chars, where the first character is limited to
-// indices 1-17 (chars '2' through 'J'). Only ~6% are 43 chars, where the
-// first character can be anything. This makes lowercase/late-alphabet chars
-// at the start ~17x rarer than a naive 1/58 estimate.
-const COMMON_FIRST_CHARS = "23456789ABCDEFGHJ";
-
-function firstCharProbability(ch, caseSensitive) {
-  if (!caseSensitive) {
-    const upperCommon = COMMON_FIRST_CHARS.includes(ch.toUpperCase());
-    const lowerCommon = COMMON_FIRST_CHARS.includes(ch.toLowerCase());
-    if (upperCommon && lowerCommon) return 2 * (1 / 17);
-    if (upperCommon || lowerCommon) return 1 / 17 + 1 / 1000;
-    if (ch === "1") return 1 / 250; // digit, no case variant
-    return 2 * (1 / 1000); // both cases are rare
-  }
-  if (COMMON_FIRST_CHARS.includes(ch)) return 1 / 17; // ~5.9%
-  if (ch === "1") return 1 / 250; // ~0.4%
-  return 1 / 1000; // ~0.1%
-}
-
-function estimateDifficulty(pattern, position, caseSensitive) {
-  const charsPerPosition = caseSensitive ? 58 : 34;
-
-  if (position === "prefix") {
-    const firstProb = firstCharProbability(pattern[0], caseSensitive);
-    const restProb = 1 / Math.pow(charsPerPosition, pattern.length - 1);
-    return Math.round(1 / (firstProb * restProb));
-  }
-
-  let expected = Math.pow(charsPerPosition, pattern.length);
-  if (position === "anywhere") {
-    expected = expected / Math.max(1, 44 - pattern.length);
-  }
-  return Math.round(expected);
-}
-
-// Returns "common", "uncommon", or "rare"
-function prefixRarity(pattern, caseSensitive) {
-  const ch = pattern[0];
-  if (caseSensitive) {
-    if (COMMON_FIRST_CHARS.includes(ch)) return "common";
-    if (ch === "1") return "uncommon";
-    return "rare";
-  }
-  if (
-    COMMON_FIRST_CHARS.includes(ch.toUpperCase()) ||
-    COMMON_FIRST_CHARS.includes(ch.toLowerCase())
-  )
-    return "common";
-  if (ch === "1") return "uncommon";
-  return "rare";
-}
-
 function formatNumber(n) {
-  return n.toLocaleString();
-}
-
-function formatTime(seconds) {
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  return `${h}h ${m}m`;
+  return Math.round(n).toLocaleString("en-US");
 }
 
 async function main() {
@@ -106,7 +39,6 @@ async function main() {
   console.log("  Excluded: 0 (zero), O (capital o), I (capital i), l (lowercase L)");
   console.log("");
 
-  // Pattern
   let pattern;
   for (;;) {
     pattern = (await ask("  Enter desired pattern: ")).trim();
@@ -116,15 +48,17 @@ async function main() {
     }
     const bad = validatePattern(pattern);
     if (bad.length > 0) {
-      const unique = [...new Set(bad)];
-      console.log(`  Invalid character(s): ${unique.map((c) => `'${c}'`).join(", ")}`);
+      console.log(`  Invalid character(s): ${bad.map((c) => `'${c}'`).join(", ")}`);
       console.log("  Only Base58 characters are allowed (no 0, O, I, l).\n");
+      continue;
+    }
+    if (pattern.length > 44) {
+      console.log("  Solana addresses are at most 44 characters.\n");
       continue;
     }
     break;
   }
 
-  // Position
   console.log("");
   console.log("  Where should the pattern appear?");
   console.log("  [1] Prefix  (start of address)");
@@ -141,7 +75,6 @@ async function main() {
     console.log("  Please enter 1, 2, or 3.");
   }
 
-  // Case sensitivity
   console.log("");
   let caseSensitive;
   for (;;) {
@@ -151,7 +84,6 @@ async function main() {
     console.log("  Please enter y or n.");
   }
 
-  // Thread count
   const cpuCount = os.cpus().length;
   const defaultThreads = Math.max(1, cpuCount - 1);
   console.log("");
@@ -164,34 +96,28 @@ async function main() {
     console.log(`  Enter a number between 1 and ${cpuCount * 2}.`);
   }
 
-  // Difficulty estimate
-  const estimated = estimateDifficulty(pattern, position, caseSensitive);
+  const job = describeJob({
+    pattern,
+    position,
+    caseSensitive,
+    threads: threadCount,
+    keysPerThread: DEFAULT_KEYS_PER_THREAD,
+  });
+
   console.log("");
   console.log("  ─────────────────────────────────────────");
   console.log(`  Pattern:    "${pattern}"`);
   console.log(`  Position:   ${position}`);
   console.log(`  Case:       ${caseSensitive ? "sensitive" : "insensitive"}`);
   console.log(`  Threads:    ${threadCount}`);
-  console.log(`  Est. keys:  ~${formatNumber(estimated)} attempts`);
-
-  const rarity = position === "prefix" ? prefixRarity(pattern, caseSensitive) : "common";
-  if (rarity === "uncommon") {
+  console.log(`  Est. keys:  ~${formatAttempts(job.attempts)} attempts`);
+  console.log(
+    `  Est. time:  ${formatEstimate(job.seconds)} at ~${formatNumber(job.rate)} keys/s`
+  );
+  for (const warning of job.warnings) {
     console.log("");
-    console.log(`  ⚠ '${pattern[0]}' is uncommon as a first character (~0.4% of addresses).`);
-    console.log("  About 4x harder than common first chars (2-9, A-H, J).");
-  } else if (rarity === "rare") {
-    console.log("");
-    console.log(`  ⚠ '${pattern[0]}' is rare as a first character (~0.1% of addresses).`);
-    console.log("  About 17x harder than common first chars (2-9, A-H, J).");
-    console.log("  Consider using suffix or anywhere for faster results.");
+    console.log(`  ⚠ ${warning}`);
   }
-
-  if (pattern.length >= 6 && position !== "anywhere") {
-    console.log("");
-    console.log("  ⚠ Long patterns take exponentially longer.");
-    console.log("  6+ chars at prefix/suffix could take hours or days.");
-  }
-
   console.log("  ─────────────────────────────────────────");
   console.log("");
 
@@ -224,7 +150,7 @@ async function main() {
         const elapsed = (Date.now() - startTime) / 1000;
         const rate = Math.round(totalAttempts / elapsed);
         process.stdout.write(
-          `\r  Checked: ${formatNumber(totalAttempts)} | Rate: ${formatNumber(rate)}/s | Time: ${formatTime(Math.round(elapsed))}   `
+          `\r  Checked: ${formatNumber(totalAttempts)} | Rate: ${formatNumber(rate)}/s | Time: ${formatDuration(elapsed)}   `
         );
       }
 
@@ -242,7 +168,7 @@ async function main() {
         console.log(`  Private Key: ${msg.privateKey}`);
         console.log("");
         console.log(`  Attempts:    ${formatNumber(totalAttempts)}`);
-        console.log(`  Time:        ${formatTime(Math.round(elapsed))}`);
+        console.log(`  Time:        ${formatDuration(elapsed)}`);
         console.log("");
         console.log("  ⚠ SAVE YOUR PRIVATE KEY SECURELY!");
         console.log("  ⚠ Anyone with the private key controls this wallet.");
