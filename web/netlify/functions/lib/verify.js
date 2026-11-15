@@ -58,7 +58,28 @@ export async function verifyPayment({
   return { ok: true, status: 200, ...issued, asset: "usdc" };
 }
 
-export async function consumeUnlock({ token, store, secret, now = Date.now() }) {
+const READ_ATTEMPTS = 4;
+const READ_BACKOFF_MS = 200;
+
+async function readPaymentRecord(store, ref, attempts, backoffMs) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const record = await store.get(ref);
+    if (record) return record;
+    if (attempt < attempts - 1 && backoffMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, backoffMs * (attempt + 1)));
+    }
+  }
+  return null;
+}
+
+export async function consumeUnlock({
+  token,
+  store,
+  secret,
+  now = Date.now(),
+  attempts = READ_ATTEMPTS,
+  backoffMs = READ_BACKOFF_MS,
+}) {
   const parsed = readUnlockToken(token, secret, now);
   if (!parsed.ok) {
     return {
@@ -67,7 +88,7 @@ export async function consumeUnlock({ token, store, secret, now = Date.now() }) 
       reason: parsed.reason,
     };
   }
-  const record = await store.get(parsed.ref);
+  const record = await readPaymentRecord(store, parsed.ref, attempts, backoffMs);
   if (!record) return { ok: false, status: 400, reason: "invalid" };
   if (record.status === "consumed") return { ok: false, status: 409, reason: "reused" };
   if (record.status !== "paid") return { ok: false, status: 400, reason: "invalid" };

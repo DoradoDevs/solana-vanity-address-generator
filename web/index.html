@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
   <title>VanityGrinder — Solana Vanity Address Generator</title>
   <meta name="description" content="Generate a custom Solana vanity address in your browser. Private keys stay on your device. $1 in USDC per grind, paid from your wallet." />
   <meta name="author" content="DoradoDevs" />
@@ -46,7 +46,8 @@
   <div id="page">
     <header class="topnav">
       <a class="brand" href="#hero">VanityGrinder</a>
-      <nav aria-label="Page">
+      <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-nav">Menu</button>
+      <nav id="site-nav" aria-label="Page">
         <a href="#terminal-section">Generator</a>
         <a href="#explainer">How it works</a>
         <a href="#estimator">Estimator</a>
@@ -105,8 +106,9 @@
             <div id="output" role="log"></div>
             <div id="input-line">
               <label id="prompt" for="input">&gt; </label>
-              <input type="text" id="input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+              <input type="text" id="input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" />
             </div>
+            <div id="choice-bar" class="choice-bar" hidden></div>
           </div>
         </div>
       </div>

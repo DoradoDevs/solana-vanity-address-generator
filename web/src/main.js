@@ -82,19 +82,62 @@ if (typeof crypto === "undefined" || typeof crypto.getRandomValues !== "function
 
 // ── Terminal helpers (textContent only) ──────────────
 
-const BOX_W = 51;
-
-function boxTop() {
-  return "  ╔" + "═".repeat(BOX_W) + "╗";
+function isNarrow() {
+  return window.matchMedia("(max-width: 800px)").matches;
 }
-function boxMid(text) {
-  const value = text.length > BOX_W ? text.slice(0, BOX_W) : text;
-  const pad = BOX_W - value.length;
+
+function terminalColumns() {
+  const terminal = document.getElementById("terminal");
+  if (!terminal || terminal.clientWidth < 40) return isNarrow() ? 28 : 80;
+  const sample = document.getElementById("output") || terminal;
+  const style = getComputedStyle(sample);
+  const probe = document.createElement("span");
+  probe.textContent = "0000000000";
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  probe.style.whiteSpace = "pre";
+  probe.style.font = style.font;
+  document.body.appendChild(probe);
+  const char = probe.getBoundingClientRect().width / 10 || 8;
+  probe.remove();
+  const termStyle = getComputedStyle(terminal);
+  const pad =
+    (parseFloat(termStyle.paddingLeft) || 0) + (parseFloat(termStyle.paddingRight) || 0);
+  return Math.max(18, Math.floor((terminal.clientWidth - pad - 8) / char));
+}
+
+function boxWidth() {
+  return Math.min(51, Math.max(16, terminalColumns() - 4));
+}
+
+function boxTop(width = boxWidth()) {
+  return "  ╔" + "═".repeat(width) + "╗";
+}
+function boxMid(text, width = boxWidth()) {
+  const value = text.length > width ? text.slice(0, width) : text;
+  const pad = width - value.length;
   const left = Math.floor(pad / 2);
   return "  ║" + " ".repeat(left) + value + " ".repeat(pad - left) + "║";
 }
-function boxBot() {
-  return "  ╚" + "═".repeat(BOX_W) + "╝";
+function boxBot(width = boxWidth()) {
+  return "  ╚" + "═".repeat(width) + "╝";
+}
+
+function bannerSubtitle(width) {
+  const full = "Solana vanity addresses, on this device";
+  if (full.length <= width) return full;
+  const short = "Keys stay on this device";
+  if (short.length <= width) return short;
+  return "On this device";
+}
+
+function printRule() {
+  if (!isNarrow()) {
+    print("  ─────────────────────────────────────────", "dim");
+    return;
+  }
+  const count = Math.max(8, Math.min(41, terminalColumns() - 2));
+  print(`  ${"─".repeat(count)}`, "dim");
 }
 
 function print(text = "", cls = "") {
@@ -107,8 +150,7 @@ function print(text = "", cls = "") {
 }
 
 function scrollToBottom() {
-  const terminal = document.getElementById("terminal");
-  terminal.scrollTop = terminal.scrollHeight;
+  output.scrollTop = output.scrollHeight;
 }
 
 function clearOutput() {
@@ -183,6 +225,7 @@ function waitForInput(prompt = "> ") {
   document.getElementById("prompt").textContent = prompt;
   inputLine.classList.remove("hidden");
   inputEl.value = "";
+  renderChoices(prompt);
   inputEl.focus({ preventScroll: true });
   return new Promise((resolve) => {
     resolveInput = resolve;
@@ -191,17 +234,74 @@ function waitForInput(prompt = "> ") {
 
 function hideInput() {
   inputLine.classList.add("hidden");
+  const bar = document.getElementById("choice-bar");
+  if (bar) {
+    bar.hidden = true;
+    bar.replaceChildren();
+  }
+}
+
+function commitInput(val) {
+  if (!resolveInput) return;
+  print(`${document.getElementById("prompt").textContent}${val}`);
+  inputEl.value = "";
+  const resolve = resolveInput;
+  resolveInput = null;
+  resolve(val);
+}
+
+const CHOICE_SETS = [
+  {
+    test: (prompt) => prompt.includes("Choice [1/2/3/4]"),
+    options: [
+      ["1", "Prefix"],
+      ["2", "Suffix"],
+      ["3", "Either end"],
+      ["4", "Anywhere"],
+    ],
+  },
+  {
+    test: (prompt) => prompt.includes("Case sensitive"),
+    options: [
+      ["n", "Ignore case"],
+      ["y", "Match case"],
+    ],
+  },
+  {
+    test: (prompt) => prompt.includes("Grind another"),
+    options: [
+      ["Y", "Yes"],
+      ["n", "No"],
+    ],
+  },
+];
+
+function renderChoices(prompt) {
+  const bar = document.getElementById("choice-bar");
+  if (!bar) return;
+  bar.replaceChildren();
+  const spec = isNarrow() ? CHOICE_SETS.find((item) => item.test(prompt)) : null;
+  if (!spec) {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+  for (const [value, label] of spec.options) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "choice";
+    button.textContent = label;
+    button.addEventListener("click", () => commitInput(value));
+    bar.appendChild(button);
+  }
 }
 
 inputEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && resolveInput) {
-    const val = inputEl.value;
-    print(`${document.getElementById("prompt").textContent}${val}`);
-    inputEl.value = "";
-    const resolve = resolveInput;
-    resolveInput = null;
-    resolve(val);
-  }
+  if (e.key === "Enter") commitInput(inputEl.value);
+});
+
+inputEl.addEventListener("focus", () => {
+  if (isNarrow()) inputEl.scrollIntoView({ block: "center" });
 });
 
 document.getElementById("terminal").addEventListener("click", () => {
@@ -249,8 +349,21 @@ function updateProgress() {
   if (rate > 0 && Number.isFinite(estimatedAttempts) && estimatedAttempts > totalAttempts) {
     eta = ` | ETA: ${formatEstimate((estimatedAttempts - totalAttempts) / rate)}`;
   }
+  const checked = formatAttempts(totalAttempts);
+  const rateText = formatAttempts(Math.round(rate));
+  const timeText = formatDuration(elapsed);
+  if (isNarrow()) {
+    const lines = [
+      `  Checked: ${checked}`,
+      `  Rate: ${rateText}/s`,
+      `  Time: ${timeText}`,
+    ];
+    if (eta) lines.push(`  ETA: ${eta.slice(" | ETA: ".length)}`);
+    progressLine.textContent = lines.join("\n");
+    return;
+  }
   progressLine.textContent =
-    `  Checked: ${formatAttempts(totalAttempts)} | Rate: ${formatAttempts(Math.round(rate))}/s | Time: ${formatDuration(elapsed)}${eta}`;
+    `  Checked: ${checked} | Rate: ${rateText}/s | Time: ${timeText}${eta}`;
 }
 
 function scheduleProgress() {
@@ -287,15 +400,21 @@ function startClearCountdown() {
 function showMatch(msg) {
   if (targetCount === 1) {
     print();
-    print(boxTop(), "box glow");
-    print(boxMid("MATCH FOUND"), "box glow");
-    print(boxBot(), "box glow");
+    const width = boxWidth();
+    print(boxTop(width), "box glow");
+    print(boxMid("MATCH FOUND", width), "box glow");
+    print(boxBot(width), "box glow");
   } else {
     print();
     print(`  Match ${foundCount} of ${targetCount}`, "bright");
   }
   print();
-  print(`  Address:     ${msg.address}`, "bright");
+  if (isNarrow()) {
+    print("  Address:", "bright");
+    print(`  ${msg.address}`, "bright");
+  } else {
+    print(`  Address:     ${msg.address}`, "bright");
+  }
 
   const keyLine = document.createElement("button");
   keyLine.type = "button";
@@ -437,8 +556,7 @@ async function promptRestart() {
   await runSetup();
 }
 
-function previewAddress(pattern, position) {
-  const width = 44;
+function previewAddress(pattern, position, width = 44) {
   const gap = Math.max(0, width - pattern.length);
   const pad = "·".repeat(gap);
   if (position === "prefix") return pattern + pad;
@@ -448,6 +566,23 @@ function previewAddress(pattern, position) {
   }
   const left = Math.floor(gap / 2);
   return "·".repeat(left) + pattern + "·".repeat(gap - left);
+}
+
+function printPreview(pattern, position) {
+  const full = `  Preview:    ${previewAddress(pattern, position)}`;
+  if (!isNarrow()) {
+    print(full, "bright");
+    return;
+  }
+  const usable = Math.max(pattern.length, Math.min(44, terminalColumns() - 2));
+  print("  Preview:", "bright");
+  if (position === "prefix-or-suffix") {
+    print(`  ${previewAddress(pattern, "prefix", usable)}`, "bright");
+    print("  or", "dim");
+    print(`  ${previewAddress(pattern, "suffix", usable)}`, "bright");
+    return;
+  }
+  print(`  ${previewAddress(pattern, position, usable)}`, "bright");
 }
 
 function benchmarkDevice() {
@@ -571,17 +706,28 @@ async function runSetup() {
   });
 
   print();
-  print("  ─────────────────────────────────────────", "dim");
-  print(`  Pattern:    "${pattern}"`, "bright");
-  print(`  Position:   ${position}`);
-  print(`  Case:       ${caseSensitive ? "sensitive" : "insensitive"}`);
-  print(`  Threads:    ${threadCount}`);
-  print(`  Matches:    ${batch}`);
-  print(`  Est. keys:  ~${formatAttempts(job.attempts)} attempts`, "dim");
-  print(
-    `  Planning guess: ${formatEstimate(job.seconds)} at ~${formatAttempts(job.rate)} keys/s`,
-    "dim"
-  );
+  printRule();
+  if (isNarrow()) {
+    print(`  Pattern: "${pattern}"`, "bright");
+    print(`  Position: ${position}`);
+    print(`  Case: ${caseSensitive ? "sensitive" : "insensitive"}`);
+    print(`  Threads: ${threadCount}`);
+    print(`  Matches: ${batch}`);
+    print(`  Est. keys: ~${formatAttempts(job.attempts)}`, "dim");
+    print(`  Planning guess: ${formatEstimate(job.seconds)}`, "dim");
+    print(`  At ~${formatAttempts(job.rate)} keys/s`, "dim");
+  } else {
+    print(`  Pattern:    "${pattern}"`, "bright");
+    print(`  Position:   ${position}`);
+    print(`  Case:       ${caseSensitive ? "sensitive" : "insensitive"}`);
+    print(`  Threads:    ${threadCount}`);
+    print(`  Matches:    ${batch}`);
+    print(`  Est. keys:  ~${formatAttempts(job.attempts)} attempts`, "dim");
+    print(
+      `  Planning guess: ${formatEstimate(job.seconds)} at ~${formatAttempts(job.rate)} keys/s`,
+      "dim"
+    );
+  }
   print("  Measuring this device…", "dim");
   const perWorker = await benchmarkDevice();
   if (perWorker) {
@@ -589,15 +735,21 @@ async function runSetup() {
     const deviceSeconds = Number.isFinite(job.attempts)
       ? (job.attempts * batch) / deviceRate
       : Infinity;
-    print(
-      `  This device: ${formatAttempts(perWorker)} keys/s per worker, ~${formatAttempts(deviceRate)}/s across ${threadCount}`,
-      "bright"
-    );
-    print(`  Est. time here: ${formatEstimate(deviceSeconds)}`, "bright");
+    if (isNarrow()) {
+      print(`  This device: ${formatAttempts(perWorker)} keys/s per worker`, "bright");
+      print(`  Across ${threadCount}: ~${formatAttempts(deviceRate)}/s`, "bright");
+      print(`  Est. time here: ${formatEstimate(deviceSeconds)}`, "bright");
+    } else {
+      print(
+        `  This device: ${formatAttempts(perWorker)} keys/s per worker, ~${formatAttempts(deviceRate)}/s across ${threadCount}`,
+        "bright"
+      );
+      print(`  Est. time here: ${formatEstimate(deviceSeconds)}`, "bright");
+    }
   } else {
     print("  Could not measure this device. The planning guess still stands.", "amber");
   }
-  print(`  Preview:    ${previewAddress(pattern, position)}`, "bright");
+  printPreview(pattern, position);
   print(
     caseSensitive
       ? "  The preview uses the case you typed."
@@ -608,7 +760,7 @@ async function runSetup() {
     print("  Batch time scales roughly with the number of matches.", "dim");
   }
   for (const warning of job.warnings) print(`  ${warning}`, "amber");
-  print("  ─────────────────────────────────────────", "dim");
+  printRule();
   print();
   print("  Pay $1 to start grinding.", "amber");
   print("  Waiting for payment…", "amber");
@@ -639,22 +791,58 @@ async function runSetup() {
 
 async function boot() {
   hideInput();
-  print(boxTop(), "box");
-  print(boxMid("VANITYGRINDER"), "box");
-  print(boxMid("Solana vanity addresses, on this device"), "box");
-  print(boxBot(), "box");
+  const width = boxWidth();
+  print(boxTop(width), "box");
+  print(boxMid("VANITYGRINDER", width), "box");
+  print(boxMid(bannerSubtitle(width), width), "box");
+  print(boxBot(width), "box");
   print();
 
   const cores = navigator.hardwareConcurrency || "?";
-  print(`  Cores:    ${cores}`, "dim");
-  print("  Crypto:   @noble/curves ed25519", "dim");
-  print("  Network:  payment check only — keys stay on this device", "dim");
-  print("  Reveal:   the key leaves the screen about 60s after a match", "dim");
+  if (isNarrow()) {
+    print(`  Cores: ${cores}`, "dim");
+    print("  Crypto: @noble/curves ed25519", "dim");
+    print("  Network: payment check only", "dim");
+    print("  Keys stay on this device", "dim");
+    print("  Key leaves the screen ~60s after a match", "dim");
+  } else {
+    print(`  Cores:    ${cores}`, "dim");
+    print("  Crypto:   @noble/curves ed25519", "dim");
+    print("  Network:  payment check only — keys stay on this device", "dim");
+    print("  Reveal:   the key leaves the screen about 60s after a match", "dim");
+  }
   print();
-  print("  Base58:   1-9  A-H  J-N  P-Z  a-k  m-z", "bright");
-  print("  Excluded: 0 (zero)  O (cap-o)  I (cap-i)  l (low-L)", "amber");
+  if (isNarrow()) {
+    print("  Base58: 1-9 A-H J-N P-Z a-k m-z", "bright");
+    print("  Excluded: 0 O I l", "amber");
+  } else {
+    print("  Base58:   1-9  A-H  J-N  P-Z  a-k  m-z", "bright");
+    print("  Excluded: 0 (zero)  O (cap-o)  I (cap-i)  l (low-L)", "amber");
+  }
   print();
   await runSetup();
+}
+
+function initNav() {
+  const nav = document.querySelector(".topnav nav");
+  const toggle = document.querySelector(".nav-toggle");
+  if (!nav || !toggle) return;
+  const close = () => {
+    nav.classList.remove("is-open");
+    toggle.setAttribute("aria-expanded", "false");
+  };
+  toggle.addEventListener("click", () => {
+    const open = !nav.classList.contains("is-open");
+    nav.classList.toggle("is-open", open);
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  nav.querySelectorAll("a").forEach((link) => link.addEventListener("click", close));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") close();
+  });
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".topnav")) close();
+  });
 }
 
 // ── Estimator ────────────────────────────────────────
@@ -789,6 +977,7 @@ document.querySelectorAll('a[href="#terminal-section"]').forEach((link) => {
 });
 
 initMatrix();
+initNav();
 initEstimator();
 initSupport();
 initPay();
