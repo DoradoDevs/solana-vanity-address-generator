@@ -42,7 +42,7 @@ const REASONS = {
   pending: "Waiting for the payment to finalize.",
   not_found: "No payment was found for that reference.",
   reused: "That payment was already used for a grind.",
-  wrong_amount: "The payment amount does not cover $1.",
+  wrong_amount: "The payment must be exactly 1.00 USDC.",
   wrong_mint: "The token received was not USDC.",
   invalid: "The payment could not be matched.",
   config: "Payment verification is not configured.",

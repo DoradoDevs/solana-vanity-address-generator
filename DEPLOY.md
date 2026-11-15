@@ -1,6 +1,6 @@
 # Deploy VanityGrinder on Netlify
 
-VanityGrinder goes live on **Netlify** (free tier, private repository). The grind still runs in the browser. Netlify Functions only quote the $1 price, build the unsigned transfer, and check that the payment landed.
+VanityGrinder goes live on **Netlify** (free tier, private repository). The grind still runs in the browser. Netlify Functions quote the fixed 1.00 USDC price, build the unsigned transfer, and check that the payment landed. $1 in USDC per grind, paid from your wallet.
 
 Do not deploy this site to Vercel. The payment check is a Netlify Function and the content-security policy names `/.netlify/functions/`.
 
@@ -18,15 +18,15 @@ Set these in the Netlify UI: Site configuration → Environment variables. Scope
 
 `web/src/site.config.js` shows the same address as an optional tip. It is not a secret. Changing the tip line requires a rebuild. Changing `PAY_TO_ADDRESS` in the Netlify UI changes where payments go without a rebuild; the quote response also updates the tip line on the page.
 
-The owner's USDC associated-token account is created inside the payment transaction if it does not exist yet. The payer covers that rent the first time.
+The payee's USDC associated-token account is created inside the payment transaction if it does not exist yet. The connected wallet is the fee payer and covers that rent the first time. The price is exactly 1.00 USDC. There is no SOL payment and no price oracle.
 
 ## What the functions do
 
 | Path | Role |
 |---|---|
-| `GET /.netlify/functions/quote` | SOL price from CoinGecko and the exact `1` USDC amount. No RPC key. |
-| `POST /.netlify/functions/prepare` | Unsigned transfer to `PAY_TO_ADDRESS` with a unique `reference` account. Uses `SOLANA_RPC_URL` for a blockhash. |
-| `POST /.netlify/functions/verify` | Finds the transaction by that reference, requires finality, checks the recipient and the amount (exactly 1.00 USDC, or SOL within 3% of $1), rejects a reused reference, stores it in Netlify Blobs, returns an HMAC token. |
+| `GET /.netlify/functions/quote` | The fixed `1.00` USDC amount, the USDC mint, and the receive address. No RPC key and no price lookup. |
+| `POST /.netlify/functions/prepare` | Server-built unsigned transfer of exactly 1.00 USDC from the connected wallet's USDC account to the payee's USDC account. Adds an idempotent create-ATA instruction and a unique read-only `reference` account. Uses `SOLANA_RPC_URL` for a blockhash and a balance check. The browser never sees that URL. |
+| `POST /.netlify/functions/verify` | Finds the transaction by that reference, requires finality, checks the payee received exactly 1.00 USDC, rejects a reused reference, stores it in Netlify Blobs, returns an HMAC token. |
 | `POST /.netlify/functions/consume` | Burns that token. The terminal starts one grind only after this succeeds. |
 
 A modified copy of the JavaScript can still grind without paying, because the private key is never sent to the server. The hosted site gates the terminal on a token the server will issue only once per payment.
@@ -42,7 +42,7 @@ npm test
 npm run build
 ```
 
-`npm test` covers the grinder and the payment check with a mock RPC: exact USDC success, SOL underpayment, a non-USDC mint, and a reference that was already consumed.
+`npm test` covers the grinder and the payment check with a mock RPC: exact 1.00 USDC success, a USDC transfer that is not exactly 1.00, a non-USDC mint, a rejected SOL asset, and a reference that was already consumed.
 
 ## Netlify site
 
@@ -78,7 +78,7 @@ curl -sI https://vanitygrinder.com/ | tr -d '\r'
 
 `content-security-policy` must contain `connect-src https://vanitygrinder.com/.netlify/functions/` and must not contain a Solana RPC host.
 
-5. Open the site, pay $1 in USDC or SOL (wallet or QR), and confirm DevTools shows requests only to `/.netlify/functions/`. After the terminal says it is grinding, no further requests should appear. The private key stays in the tab.
+5. Open the site, pay $1 in USDC from a connected wallet, and confirm DevTools shows requests only to `/.netlify/functions/`. After the terminal says it is grinding, no further requests should appear. The private key stays in the tab. `?dev=1` does not bypass the payment.
 
 ## Owner checklist
 
@@ -88,4 +88,4 @@ curl -sI https://vanitygrinder.com/ | tr -d '\r'
 - [ ] The site is the Netlify project for this private repo, not a Vercel project.
 - [ ] `vanitygrinder.com` resolves to Netlify and HTTPS is valid. `www` redirects to the apex.
 - [ ] `curl -sI` shows the functions-only `connect-src`.
-- [ ] A $1 payment unlocks one grind, and paying again is required for the next one.
+- [ ] A $1 USDC wallet payment unlocks one grind, and paying again is required for the next one. `?dev=1` does not skip it.

@@ -1,4 +1,4 @@
-import { PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { PublicKey, Transaction } from "@solana/web3.js";
 import {
   createAssociatedTokenAccountIdempotentInstruction,
   createTransferCheckedInstruction,
@@ -7,55 +7,34 @@ import {
 import { USDC_BASE_UNITS, USDC_DECIMALS, USDC_MINT } from "./constants.js";
 
 /**
- * Unsigned legacy transaction. The reference is a read-only account so the
- * verifier can find the payment with getSignaturesForAddress.
+ * Unsigned legacy transaction for exactly 1.00 USDC.
+ * The connected wallet is the fee payer and the token-account owner.
+ * The payee ATA is created idempotently so a missing account does not fail the transfer.
+ * The reference is a read-only account so verify can find the payment with
+ * getSignaturesForAddress, the same lookup the payment check already uses.
  */
-export function buildUnsignedTransaction({
-  asset,
-  payer,
-  payTo,
-  reference,
-  lamports,
-  blockhash,
-}) {
+export function buildUnsignedTransaction({ payer, payTo, reference, blockhash }) {
   const payerKey = new PublicKey(payer);
   const payToKey = new PublicKey(payTo);
   const referenceKey = new PublicKey(reference);
+  const mint = new PublicKey(USDC_MINT);
+  const source = getAssociatedTokenAddressSync(mint, payerKey, true);
+  const destination = getAssociatedTokenAddressSync(mint, payToKey, true);
   const tx = new Transaction({ feePayer: payerKey, recentBlockhash: blockhash });
 
-  if (asset === "sol") {
-    const transfer = SystemProgram.transfer({
-      fromPubkey: payerKey,
-      toPubkey: payToKey,
-      lamports,
-    });
-    transfer.keys.push({ pubkey: referenceKey, isSigner: false, isWritable: false });
-    tx.add(transfer);
-  } else if (asset === "usdc") {
-    const mint = new PublicKey(USDC_MINT);
-    const source = getAssociatedTokenAddressSync(mint, payerKey, true);
-    const destination = getAssociatedTokenAddressSync(mint, payToKey, true);
-    tx.add(
-      createAssociatedTokenAccountIdempotentInstruction(
-        payerKey,
-        destination,
-        payToKey,
-        mint
-      )
-    );
-    const transfer = createTransferCheckedInstruction(
-      source,
-      mint,
-      destination,
-      payerKey,
-      USDC_BASE_UNITS,
-      USDC_DECIMALS
-    );
-    transfer.keys.push({ pubkey: referenceKey, isSigner: false, isWritable: false });
-    tx.add(transfer);
-  } else {
-    throw new Error("unknown asset");
-  }
+  tx.add(
+    createAssociatedTokenAccountIdempotentInstruction(payerKey, destination, payToKey, mint)
+  );
+  const transfer = createTransferCheckedInstruction(
+    source,
+    mint,
+    destination,
+    payerKey,
+    USDC_BASE_UNITS,
+    USDC_DECIMALS
+  );
+  transfer.keys.push({ pubkey: referenceKey, isSigner: false, isWritable: false });
+  tx.add(transfer);
 
   return Buffer.from(
     tx.serialize({ requireAllSignatures: false, verifySignatures: false })

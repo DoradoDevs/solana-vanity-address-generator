@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>VanityGrinder — Solana Vanity Address Generator</title>
-  <meta name="description" content="Generate a custom Solana vanity address in your browser. Private keys stay on your device: Web Workers, no uploads, no analytics." />
+  <meta name="description" content="Generate a custom Solana vanity address in your browser. Private keys stay on your device. $1 in USDC per grind, paid from your wallet." />
   <meta name="author" content="DoradoDevs" />
   <meta name="robots" content="index,follow" />
   <meta name="theme-color" content="#050505" />
@@ -18,7 +18,7 @@
   <meta property="og:locale" content="en_US" />
   <meta property="og:url" content="https://vanitygrinder.com/" />
   <meta property="og:title" content="VanityGrinder — Solana Vanity Address Generator" />
-  <meta property="og:description" content="Custom Solana addresses generated on your device. The only network call is a $1 SOL or USDC payment check." />
+  <meta property="og:description" content="Custom Solana addresses generated on your device. $1 in USDC per grind, paid from your wallet." />
   <meta property="og:image" content="https://vanitygrinder.com/og.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
@@ -26,7 +26,7 @@
 
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="VanityGrinder — Solana Vanity Address Generator" />
-  <meta name="twitter:description" content="Custom Solana addresses generated on your device. The only network call is payment verification." />
+  <meta name="twitter:description" content="Custom Solana addresses generated on your device. $1 in USDC per grind, paid from your wallet." />
   <meta name="twitter:image" content="https://vanitygrinder.com/og.png" />
   <meta name="twitter:image:alt" content="VanityGrinder, a client-side Solana vanity address generator" />
 
@@ -62,7 +62,7 @@
         <p class="tagline">Custom Solana wallet addresses, generated on your CPU. Keys are generated on your device; the only network call is payment verification.</p>
         <ul class="trust">
           <li>Web Workers on your cores</li>
-          <li>$1 in SOL or USDC</li>
+          <li>$1 in USDC per grind, paid from your wallet</li>
           <li>No analytics or cookies</li>
         </ul>
         <div class="cta-row">
@@ -73,19 +73,15 @@
     </header>
 
     <section id="pay-gate" class="pay-gate" aria-labelledby="pay-title">
-      <h2 id="pay-title">Pay $1 to grind</h2>
+      <h2 id="pay-title">Pay $1 to start grinding</h2>
       <p>Keys are generated on your device. The only network call is payment verification. One payment unlocks one grind.</p>
-      <p id="pay-quote" class="pay-quote">Loading the current SOL price…</p>
+      <p id="pay-quote" class="pay-quote">$1 in USDC per grind, paid from your wallet.</p>
+      <p>Connect Phantom, Solflare, Backpack, or another Solana wallet. The wallet signs a transfer of exactly 1.00 USDC. You need a little SOL for the network fee.</p>
       <div class="pay-actions">
-        <button type="button" id="pay-wallet-usdc">Wallet · 1.00 USDC</button>
-        <button type="button" id="pay-wallet-sol">Wallet · SOL</button>
-        <button type="button" id="pay-qr-usdc">QR · 1.00 USDC</button>
-        <button type="button" id="pay-qr-sol">QR · SOL</button>
+        <button type="button" id="pay-wallet">Connect wallet</button>
         <button type="button" id="pay-cancel">Not now</button>
       </div>
       <div id="pay-wallet-list" class="pay-wallets"></div>
-      <canvas id="pay-qr" hidden></canvas>
-      <p id="pay-url" class="pay-url"></p>
       <p id="pay-status" class="pay-status" role="status"></p>
     </section>
 
@@ -116,7 +112,7 @@
       </div>
       <p class="local-note">Keys are generated on your device. The only network call is payment verification. Stop a grind with the button, Esc, or Ctrl+C.</p>
       <noscript>
-        <p class="noscript">JavaScript runs the grinder. It still does not connect to a server. The explainer, estimator labels, difficulty table, and safety FAQ below are in the page itself.</p>
+        <p class="noscript">JavaScript runs the grinder and the wallet payment. The explainer, estimator labels, difficulty table, and safety FAQ below are in the page itself.</p>
       </noscript>
     </section>
 
@@ -131,7 +127,7 @@
       </article>
       <article class="glass-card">
         <h3>Payment only</h3>
-        <p>Content-Security-Policy allows connections only to this site's <span class="mono">/.netlify/functions/</span> paths, for the $1 quote and the payment check. No web fonts, cookies, or analytics are loaded. The grind worker has no network access.</p>
+        <p>Content-Security-Policy allows connections only to this site's <span class="mono">/.netlify/functions/</span> paths, for the $1 USDC payment. No web fonts, cookies, or analytics are loaded. The grind worker has no network access and never receives the RPC URL.</p>
       </article>
       <article class="glass-card">
         <h3>Memory wiping</h3>
@@ -283,11 +279,11 @@
         </details>
         <details class="faq">
           <summary>Do you use analytics, cookies, or a wallet extension?</summary>
-          <p>No analytics, no cookies, no wallet adapter, and no web fonts. The page does not ask for a Solana provider and does not build a transaction. Optional tips are a public address you copy into a wallet you already use.</p>
+          <p>No analytics, no cookies, and no web fonts. The $1 grind payment connects a Solana wallet through the Wallet Standard — Phantom, Solflare, Backpack, and others — and asks it to sign a transfer of exactly 1.00 USDC. That is the only transaction this page builds. The grind does not use that wallet, and the new private key is still generated on this device. Optional tips are a public address you copy into a wallet you already use.</p>
         </details>
         <details class="faq">
           <summary>What does the tip line do?</summary>
-          <p>The tip line shows the same public address that receives the $1 grind payment. Copy it into a wallet you already trust if you want to send extra SOL. The page does not learn whether a tip arrived. The $1 grind payment is separate and is checked by the site's own function.</p>
+          <p>The tip line shows the same public address that receives the grind payment. Copy it into a wallet you already trust if you want to send a tip. The page does not learn whether a tip arrived. The grind payment is $1 in USDC per grind, paid from your wallet, and is checked by the site's own function.</p>
         </details>
         <details class="faq">
           <summary>What is Pro?</summary>
@@ -306,7 +302,7 @@
       <div class="support-grid">
         <article class="glass-card" id="tip-card">
           <h3>Tip the author</h3>
-          <p>If a vanity address was useful, you can send SOL to the public address below from a wallet you already trust. VanityGrinder does not attach a wallet and does not broadcast anything.</p>
+          <p>If a vanity address was useful, you can send a tip to the public address below from a wallet you already trust. A tip is separate from the grind. The grind is $1 in USDC per grind, paid from your wallet.</p>
           <p class="tip-address" id="tip-address">crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp</p>
           <button type="button" id="tip-copy">Copy address</button>
           <p class="fine" id="tip-note">Public address only. A tip is optional. The $1 grind payment is checked separately and does not reveal your new key.</p>
