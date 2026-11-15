@@ -4,6 +4,8 @@ node_modules/
 # Build output
 dist/
 web/public/worker.js
+.netlify/
+web/.netlify/
 
 # Secrets / keys — this tool never needs them; these patterns are a guardrail
 .env

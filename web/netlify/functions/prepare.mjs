@@ -1,8 +1,7 @@
-import { Connection } from "@solana/web3.js";
 import { payToAddress, solanaRpcUrl, TOLERANCE_BPS, USDC_MINT } from "./lib/constants.js";
+import { isAddress } from "./lib/address.js";
 import { json, readJson } from "./lib/http.js";
 import { fetchSolPriceUsd, formatSolAmount, lamportsForOneUsd } from "./lib/price.js";
-import { buildUnsignedTransaction, isAddress } from "./lib/tx.js";
 
 export default async function prepare(request) {
   if (request.method !== "POST") return json({ error: "POST only." }, 405);
@@ -33,6 +32,8 @@ export default async function prepare(request) {
     }
   }
 
+  const { Connection } = await import("@solana/web3.js");
+  const { buildUnsignedTransaction } = await import("./lib/tx.js");
   const connection = new Connection(rpcUrl, "confirmed");
   let blockhash;
   try {

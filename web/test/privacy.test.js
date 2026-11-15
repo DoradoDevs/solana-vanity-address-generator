@@ -30,9 +30,17 @@ test("production CSP allows only this site's Netlify functions", () => {
   for (const value of cspValues(read("../public/_headers"))) {
     assert.equal(value, PRODUCTION_CSP);
   }
-  const tomlValues = cspValues(read("../../netlify.toml"));
-  assert.ok(tomlValues.length >= 1);
-  for (const value of tomlValues) assert.equal(value, PRODUCTION_CSP);
+  for (const file of ["../../netlify.toml", "../netlify.toml"]) {
+    const tomlValues = cspValues(read(file));
+    assert.ok(tomlValues.length >= 1, file);
+    for (const value of tomlValues) assert.equal(value, PRODUCTION_CSP);
+  }
+  const quote = read("../netlify/functions/quote.mjs");
+  const verifyFn = read("../netlify/functions/verify.mjs");
+  const consume = read("../netlify/functions/consume.mjs");
+  for (const src of [quote, verifyFn, consume]) {
+    assert.doesNotMatch(src, /@solana\/web3\.js|@solana\/spl-token|lib\/tx\.js/);
+  }
   assert.equal(fs.existsSync(new URL("../vercel.json", import.meta.url)), false);
 });
 
