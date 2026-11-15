@@ -45,10 +45,44 @@ self.onmessage = (event) => {
   if (!selfTestOk || running) return;
   running = true;
   stopped = false;
+  if (data.command === "bench") {
+    bench(data.ms)
+      .catch((err) => {
+        self.postMessage({ type: "error", message: err?.message || String(err) });
+      })
+      .finally(() => {
+        running = false;
+      });
+    return;
+  }
   grind(data).catch((err) => {
     self.postMessage({ type: "error", message: err?.message || String(err) });
   });
 };
+
+async function bench(ms) {
+  const duration = Math.min(4000, Math.max(1500, Number(ms) || 2500));
+  const priv = new Uint8Array(32);
+  const t0 = performance.now();
+  let count = 0;
+  try {
+    while (!stopped && performance.now() - t0 < duration) {
+      crypto.getRandomValues(priv);
+      encodeBase58(ed25519.getPublicKey(priv));
+      priv.fill(0);
+      count++;
+    }
+    const elapsed = Math.max(1, performance.now() - t0);
+    self.postMessage({
+      type: "bench",
+      count,
+      ms: elapsed,
+      keysPerSec: Math.round((count * 1000) / elapsed),
+    });
+  } finally {
+    priv.fill(0);
+  }
+}
 
 async function grind(data) {
   const { pattern, position } = data;

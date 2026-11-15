@@ -18,7 +18,7 @@ export const CONNECT_SRC = [
 export const PRODUCTION_CSP = [
   "default-src 'self'",
   "script-src 'self' 'sha256-BkKP2XO6WOEc3kXOiLr2ZoY83hamalKjPY9xBcbXVuw='",
-  "style-src 'self' 'sha256-SjH/9gALrx/1PrIaletlMyhFY9LtuVBRtfZlLg3hwjA='",
+  "style-src 'self' 'sha256-rtlpYQDea8CghSWj+10cTMv5JN4Mdo1uYlXysAcWC/k='",
   "font-src 'self'",
   "img-src 'self' data:",
   `connect-src ${CONNECT_SRC}`,

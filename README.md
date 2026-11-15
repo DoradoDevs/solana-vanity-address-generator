@@ -41,12 +41,22 @@ Requires Node.js ≥ 18. Uses `worker_threads` for parallelism and `@noble/curve
 ```bash
 cd web
 npm install
-npm run dev      # bundles the worker, then starts the Vite dev server
+npm run dev      # UI only. Payment calls need the functions below.
 npm run build    # production build to web/dist
 npm run preview  # serve the production build locally
 ```
 
-Open the printed localhost URL. The interface is a retro terminal — enter a pattern and it grinds locally in Web Workers (one per core you allow). Vite bundles the worker into the production build, so `npm run dev` and `npm run build` do not need a separate worker step.
+A grind on the real site costs $1. To exercise that locally, from the repository root, with `SOLANA_RPC_URL` and `UNLOCK_SECRET` set:
+
+```bash
+npx netlify dev
+```
+
+That serves the app and the payment functions together (port 8888). `npm run dev` by itself does not start those functions, so the quote and the payment check fail.
+
+While `npm run dev` is running, `http://localhost:5173/?dev=1` skips the $1 payment. That query is compiled out of production builds. `npm run preview` and the Netlify deploy ignore it.
+
+The terminal asks for the pattern first, measures your device for a couple of seconds, then asks for the $1 payment and starts grinding. Vite bundles the worker into the production build.
 
 ```bash
 npm test     # difficulty math, Base58, CSP headers, CLI worker smoke test

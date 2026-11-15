@@ -117,10 +117,9 @@ function renderWallets(asset) {
 
 function markPaid(token) {
   unlockToken = token;
-  setStatus("Paid. This unlocks one grind. Continue in the terminal.");
-  const pending = waiters.splice(0);
-  for (const resolve of pending) resolve(true);
+  setStatus("Paid. Starting this grind.");
   document.getElementById("pay-gate")?.classList.add("paid");
+  settleWaiters({ ok: true });
 }
 
 async function watch(reference, asset) {
@@ -258,17 +257,46 @@ export function initPay() {
   document.getElementById("pay-wallet-sol")?.addEventListener("click", () => startWallet("sol"));
   document.getElementById("pay-qr-usdc")?.addEventListener("click", () => startQr("usdc"));
   document.getElementById("pay-qr-sol")?.addEventListener("click", () => startQr("sol"));
+  document.getElementById("pay-cancel")?.addEventListener("click", () => cancelPaymentWait());
   loadQuote();
 }
 
+function settleWaiters(result) {
+  const pending = waiters.splice(0);
+  for (const resolve of pending) resolve(result);
+}
+
 export function ensurePaid() {
-  if (unlockToken) return Promise.resolve(true);
+  if (import.meta.env.DEV) {
+    const devQuery = new URLSearchParams(window.location.search).get("dev") === "1";
+    if (devQuery) {
+      unlockToken = "vg-dev-bypass";
+      setStatus("Local dev bypass is on (?dev=1). No payment was sent.");
+      return Promise.resolve({ ok: true });
+    }
+  }
+  if (unlockToken) return Promise.resolve({ ok: true });
+  setStatus("Waiting for the $1 payment. Use the buttons here, or choose Not now.");
+  document.getElementById("pay-gate")?.scrollIntoView({ block: "nearest" });
   return new Promise((resolve) => {
     waiters.push(resolve);
   });
 }
 
+export function cancelPaymentWait() {
+  settleWaiters({
+    ok: false,
+    message: "Payment cancelled. Nothing was charged for this attempt.",
+  });
+}
+
 export async function consumePaidGrind() {
+  if (import.meta.env.DEV) {
+    if (unlockToken === "vg-dev-bypass") {
+      unlockToken = null;
+      return { ok: true };
+    }
+  }
   if (!unlockToken) return { ok: false, message: "Pay $1 before grinding." };
   let result;
   try {

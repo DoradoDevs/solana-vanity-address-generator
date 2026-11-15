@@ -437,13 +437,48 @@ async function promptRestart() {
   await runSetup();
 }
 
-async function runSetup() {
-  const paid = await ensurePaid();
-  if (!paid) {
-    print("  A $1 payment is required before grinding.", "amber");
-    return;
+function previewAddress(pattern, position) {
+  const width = 44;
+  const gap = Math.max(0, width - pattern.length);
+  const pad = "·".repeat(gap);
+  if (position === "prefix") return pattern + pad;
+  if (position === "suffix") return pad + pattern;
+  if (position === "prefix-or-suffix") {
+    return `${pattern}${pad}   or   ${pad}${pattern}`;
   }
+  const left = Math.floor(gap / 2);
+  return "·".repeat(left) + pattern + "·".repeat(gap - left);
+}
 
+function benchmarkDevice() {
+  return new Promise((resolve) => {
+    let worker;
+    try {
+      worker = new Worker(new URL("./grind-worker.js", import.meta.url), { name: "vanity-bench" });
+    } catch {
+      resolve(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      worker.terminate();
+      resolve(null);
+    }, 6000);
+    worker.onmessage = (event) => {
+      if (event.data?.type !== "bench") return;
+      clearTimeout(timer);
+      worker.terminate();
+      resolve(event.data.keysPerSec || null);
+    };
+    worker.onerror = () => {
+      clearTimeout(timer);
+      worker.terminate();
+      resolve(null);
+    };
+    worker.postMessage({ command: "bench", ms: 2500 });
+  });
+}
+
+async function runSetup() {
   let pattern;
   while (true) {
     pattern = (await waitForInput("  Enter desired pattern > ")).trim();
@@ -544,7 +579,29 @@ async function runSetup() {
   print(`  Matches:    ${batch}`);
   print(`  Est. keys:  ~${formatAttempts(job.attempts)} attempts`, "dim");
   print(
-    `  Est. time:  ${formatEstimate(job.seconds)} at ~${formatAttempts(job.rate)} keys/s`,
+    `  Planning guess: ${formatEstimate(job.seconds)} at ~${formatAttempts(job.rate)} keys/s`,
+    "dim"
+  );
+  print("  Measuring this device…", "dim");
+  const perWorker = await benchmarkDevice();
+  if (perWorker) {
+    const deviceRate = perWorker * threadCount;
+    const deviceSeconds = Number.isFinite(job.attempts)
+      ? (job.attempts * batch) / deviceRate
+      : Infinity;
+    print(
+      `  This device: ${formatAttempts(perWorker)} keys/s per worker, ~${formatAttempts(deviceRate)}/s across ${threadCount}`,
+      "bright"
+    );
+    print(`  Est. time here: ${formatEstimate(deviceSeconds)}`, "bright");
+  } else {
+    print("  Could not measure this device. The planning guess still stands.", "amber");
+  }
+  print(`  Preview:    ${previewAddress(pattern, position)}`, "bright");
+  print(
+    caseSensitive
+      ? "  The preview uses the case you typed."
+      : "  A case-insensitive grind also keeps the other case.",
     "dim"
   );
   if (batch > 1) {
@@ -553,11 +610,12 @@ async function runSetup() {
   for (const warning of job.warnings) print(`  ${warning}`, "amber");
   print("  ─────────────────────────────────────────", "dim");
   print();
+  print("  Pay $1 to start grinding.", "amber");
+  print("  Waiting for payment…", "amber");
 
-  const confirm = (await waitForInput("  Start grinding? [Y/n] > ")).trim().toLowerCase();
-  hideInput();
-  if (confirm === "n") {
-    print("  Aborted.", "dim");
+  const paid = await ensurePaid();
+  if (!paid.ok) {
+    print(`  ${paid.message || "Payment was not completed."}`, "amber");
     print();
     await runSetup();
     return;
