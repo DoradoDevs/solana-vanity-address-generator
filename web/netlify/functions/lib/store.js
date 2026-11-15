@@ -14,7 +14,7 @@ export function memoryStore(initial = {}) {
 function wrapBlobStore(store) {
   return {
     async get(key) {
-      const value = await store.get(key, { type: "json" });
+      const value = await store.get(key, { type: "json", consistency: "strong" });
       return value ?? null;
     },
     async set(key, value) {
@@ -25,7 +25,9 @@ function wrapBlobStore(store) {
 
 export async function blobStore() {
   const { getStore } = await import("@netlify/blobs");
-  return wrapBlobStore(getStore("grind-payments"));
+  // Strong consistency on the client covers every read and write. The default
+  // is eventual, and consume runs about a second after verify's set.
+  return wrapBlobStore(getStore({ name: "grind-payments", consistency: "strong" }));
 }
 
 /** Production uses Blobs. Local `netlify functions:serve` falls back to memory. */

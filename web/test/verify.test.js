@@ -298,3 +298,130 @@ test("wallet errors map to friendly messages that mention the network fee", () =
   );
   assert.match(PAY_ERRORS.no_wallet, /Phantom, Solflare, or Backpack/);
 });
+
+test("consume retries a stale payment read, then unlocks", async () => {
+  const store = memoryStore();
+  const now = 1_700_000_000_000;
+  const issued = await verifyPayment(paymentArgs({ store, now }));
+  assert.equal(issued.ok, true);
+  let gets = 0;
+  const lagging = {
+    async get(key) {
+      gets += 1;
+      if (gets < 4) return null;
+      return store.get(key);
+    },
+    async set(key, value) {
+      return store.set(key, value);
+    },
+  };
+  const spent = await consumeUnlock({
+    token: issued.token,
+    store: lagging,
+    secret: SECRET,
+    now,
+    attempts: 4,
+    backoffMs: 0,
+  });
+  assert.equal(spent.ok, true);
+  assert.equal(gets, 4);
+  assert.equal((await store.get(REFERENCE)).status, "consumed");
+});
+
+test("a bad signature is not a missing record, and a missing record stays invalid", async () => {
+  const store = memoryStore();
+  const now = 1_700_000_000_000;
+  const issued = await verifyPayment(paymentArgs({ store, now }));
+  let gets = 0;
+  const empty = {
+    async get() {
+      gets += 1;
+      return null;
+    },
+    async set() {},
+  };
+  const bad = await consumeUnlock({
+    token: `${issued.token}x`,
+    store: empty,
+    secret: SECRET,
+    now,
+    attempts: 4,
+    backoffMs: 0,
+  });
+  assert.equal(bad.reason, "bad");
+  assert.equal(gets, 0);
+
+  const missing = await consumeUnlock({
+    token: issued.token,
+    store: empty,
+    secret: SECRET,
+    now,
+    attempts: 4,
+    backoffMs: 0,
+  });
+  assert.equal(missing.reason, "invalid");
+  assert.equal(missing.ok, false);
+  assert.equal(gets, 4);
+});
+
+test("a paid reference resumes with a fresh token and does not read the chain again", async () => {
+  const store = memoryStore();
+  const now = 1_700_000_000_000;
+  const first = await verifyPayment(paymentArgs({ store, now }));
+  assert.equal(first.ok, true);
+  let calls = 0;
+  const rpc = {
+    async getSignaturesForAddress() {
+      calls += 1;
+      throw new Error("chain should not be read for a paid reference");
+    },
+    async getTransaction() {
+      calls += 1;
+      throw new Error("chain should not be read for a paid reference");
+    },
+  };
+  const resumed = await verifyPayment(paymentArgs({ store, now: now + 5000, rpc }));
+  assert.equal(calls, 0);
+  assert.equal(resumed.ok, true);
+  assert.equal(resumed.status, 200);
+  assert.notEqual(resumed.token, first.token);
+  const parsed = readUnlockToken(resumed.token, SECRET, now + 5000);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.ref, REFERENCE);
+  const spent = await consumeUnlock({
+    token: resumed.token,
+    store,
+    secret: SECRET,
+    now: now + 5000,
+    backoffMs: 0,
+  });
+  assert.equal(spent.ok, true);
+
+  const again = await verifyPayment(paymentArgs({ store, now: now + 5000, rpc }));
+  assert.equal(calls, 0);
+  assert.equal(again.ok, false);
+  assert.equal(again.status, 409);
+  assert.equal(again.reason, "reused");
+});
+
+test("a new reference is still checked on chain", async () => {
+  let calls = 0;
+  const result = await verifyPayment(
+    paymentArgs({
+      store: memoryStore(),
+      rpc: {
+        async getSignaturesForAddress() {
+          calls += 1;
+          return [];
+        },
+        async getTransaction() {
+          calls += 1;
+          return null;
+        },
+      },
+    })
+  );
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "not_found");
+  assert.equal(calls, 1);
+});

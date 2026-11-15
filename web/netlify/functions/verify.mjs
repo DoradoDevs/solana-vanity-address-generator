@@ -48,11 +48,16 @@ const REASONS = {
   config: "Payment verification is not configured.",
 };
 
+function logVerify(result) {
+  console.log(`verify ${result.ok ? "paid" : result.reason || "rejected"}`);
+}
+
 export default async function verify(request) {
   if (request.method !== "POST") return json({ error: "POST only." }, 405);
   const secret = unlockSecret();
   const rpcUrl = solanaRpcUrl();
   if (!secret || !rpcUrl) {
+    logVerify({ ok: false, reason: "config" });
     return json({ error: "Payment verification is not configured.", reason: "config" }, 500);
   }
 
@@ -61,6 +66,7 @@ export default async function verify(request) {
   try {
     store = await openStore();
   } catch {
+    logVerify({ ok: false, reason: "config" });
     return json({ error: "Payment storage is unavailable.", reason: "config" }, 500);
   }
 
@@ -73,6 +79,7 @@ export default async function verify(request) {
       payTo: payToAddress(),
       secret,
     });
+    logVerify(result);
     return json(
       {
         ok: result.ok,
@@ -85,6 +92,7 @@ export default async function verify(request) {
       result.status
     );
   } catch {
+    console.log("verify unreachable");
     return json({ error: "The Solana network is unreachable from the server.", reason: "pending" }, 503);
   }
 }
