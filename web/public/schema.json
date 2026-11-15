@@ -11,9 +11,9 @@
     "@type": "Offer",
     "price": "1",
     "priceCurrency": "USD",
-    "description": "$1 per grind, payable in SOL or USDC"
+    "description": "$1 in USDC per grind, paid from your wallet"
   },
-  "description": "Client-side Solana vanity address generator. Keypairs are created locally in Web Workers and are never uploaded. Grinding costs $1, payable in SOL or USDC.",
+  "description": "Client-side Solana vanity address generator. Keypairs are created locally in Web Workers and are never uploaded. $1 in USDC per grind, paid from your wallet.",
   "publisher": {
     "@type": "Organization",
     "name": "DoradoDevs",

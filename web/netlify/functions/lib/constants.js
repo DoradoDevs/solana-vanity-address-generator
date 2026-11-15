@@ -7,9 +7,6 @@ export const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 export const USDC_DECIMALS = 6;
 export const USDC_BASE_UNITS = 1_000_000n;
 
-/** Accept a SOL payment that is this much under the quoted $1 price. Overpay is fine. */
-export const TOLERANCE_BPS = 300;
-
 export const TOKEN_TTL_MS = 10 * 60 * 1000;
 
 export function payToAddress() {

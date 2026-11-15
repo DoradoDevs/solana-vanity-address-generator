@@ -4,7 +4,7 @@ Generate custom **Solana vanity addresses** — wallet addresses that start with
 
 | | What it is | Best for |
 |---|---|---|
-| [`web/`](web) | A browser app. Every keypair is generated locally in Web Workers. The page may call only its own Netlify Functions, and only to verify a $1 SOL or USDC payment. | Anyone — keys stay on the device. |
+| [`web/`](web) | A browser app. Every keypair is generated locally in Web Workers. The page may call only its own Netlify Functions, and only for the grind payment: $1 in USDC per grind, paid from your wallet. | Anyone — keys stay on the device. |
 | [`cli/`](cli) | A **multi-threaded** Node.js command-line grinder. | Max throughput on a workstation or server. |
 
 Both use audited [`@noble/curves`](https://github.com/paulmillr/noble-curves) ed25519 and never transmit, log, or persist a generated key.
@@ -15,7 +15,7 @@ Both use audited [`@noble/curves`](https://github.com/paulmillr/noble-curves) ed
 
 Vanity grinding means generating enormous numbers of real keypairs and keeping the one whose address matches. That only stays safe if the keys never leave your machine — so this tool is built around that:
 
-- **Keys stay on the device.** The grind runs in Web Workers and does not open a connection. The page may call only `/.netlify/functions/` to quote and verify a $1 payment. No web fonts, analytics, cookies, or trackers. The Solana RPC URL stays in a Netlify environment variable.
+- **Keys stay on the device.** The grind runs in Web Workers and does not open a connection. The page may call only `/.netlify/functions/` to quote and verify the grind payment: $1 in USDC per grind, paid from your wallet. No web fonts, analytics, cookies, or trackers. The Solana RPC URL stays in a Netlify environment variable, and the grind worker never receives it.
 - **Keys live in memory only.** Raw secret-key bytes are zeroed immediately after they're encoded; non-matching keys are discarded each cycle.
 - **Web app hardening.** DOM is built with `textContent` only (no `innerHTML`, no XSS surface). About 60 seconds after a match the terminal wipes itself; a key that is still on screen redacts after 2 minutes. Copying a private key clears the clipboard about 60 seconds later when the browser allows it.
 - **CSPRNG required.** Generation refuses to run without `crypto.getRandomValues`.
@@ -46,17 +46,15 @@ npm run build    # production build to web/dist
 npm run preview  # serve the production build locally
 ```
 
-A grind on the real site costs $1. To exercise that locally, from the repository root, with `SOLANA_RPC_URL` and `UNLOCK_SECRET` set:
+A grind costs $1 in USDC per grind, paid from your wallet. To exercise that locally, from the repository root, with `SOLANA_RPC_URL` and `UNLOCK_SECRET` set:
 
 ```bash
 npx netlify dev
 ```
 
-That serves the app and the payment functions together (port 8888). `npm run dev` by itself does not start those functions, so the quote and the payment check fail.
+That serves the app and the payment functions together (port 8888). `npm run dev` by itself does not start those functions, so the quote and the payment check fail. `?dev=1` does not bypass payment, in dev or in production. One payment unlocks one grind, and only after the server has seen the finalized 1.00 USDC transfer.
 
-While `npm run dev` is running, `http://localhost:5173/?dev=1` skips the $1 payment. That query is compiled out of production builds. `npm run preview` and the Netlify deploy ignore it.
-
-The terminal asks for the pattern first, measures your device for a couple of seconds, then asks for the $1 payment and starts grinding. Vite bundles the worker into the production build.
+The terminal asks for the pattern first, measures your device for a couple of seconds, then says "Pay $1 to start grinding" and waits for the wallet payment. Vite bundles the worker into the production build.
 
 ```bash
 npm test     # difficulty math, Base58, CSP headers, CLI worker smoke test

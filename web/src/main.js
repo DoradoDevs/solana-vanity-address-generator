@@ -762,7 +762,7 @@ function initSupport() {
     }
     if (tipNote) {
       tipNote.textContent =
-        "Public address only. A tip is optional. The $1 grind payment is a separate transfer checked by this site.";
+        "Public address only. A tip is optional. The grind is $1 in USDC per grind, paid from your wallet, and is checked separately.";
     }
   }
 

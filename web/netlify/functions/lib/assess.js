@@ -4,13 +4,6 @@ function pubkeyOf(key) {
   return typeof key === "string" ? key : key?.pubkey;
 }
 
-function accountIndex(accountKeys, address) {
-  for (let i = 0; i < accountKeys.length; i++) {
-    if (pubkeyOf(accountKeys[i]) === address) return i;
-  }
-  return -1;
-}
-
 function tokenDelta(meta, owner, mint) {
   const before = new Map();
   for (const row of meta?.preTokenBalances || []) {
@@ -45,34 +38,20 @@ function mintsReceived(meta, owner) {
 
 /**
  * Decide whether a finalized jsonParsed transaction pays for one grind.
- * `minLamports` is the smallest SOL payment accepted at the current price.
+ * The payee must receive exactly 1.00 USDC, and the reference must be on the transaction.
  */
-export function assessTransaction(tx, { payTo, reference, asset, minLamports }) {
+export function assessTransaction(tx, { payTo, reference }) {
   if (!tx || tx.meta?.err) return { ok: false, reason: "invalid" };
   const keys = tx.transaction?.message?.accountKeys || [];
   if (!keys.some((key) => pubkeyOf(key) === reference)) {
     return { ok: false, reason: "invalid" };
   }
 
-  if (asset === "sol") {
-    const index = accountIndex(keys, payTo);
-    if (index < 0) return { ok: false, reason: "wrong_amount" };
-    const pre = BigInt(tx.meta.preBalances?.[index] ?? 0);
-    const post = BigInt(tx.meta.postBalances?.[index] ?? 0);
-    const received = post - pre;
-    if (received >= BigInt(minLamports)) return { ok: true, asset: "sol" };
-    return { ok: false, reason: "wrong_amount" };
+  const received = tokenDelta(tx.meta, payTo, USDC_MINT);
+  if (received === USDC_BASE_UNITS) return { ok: true, asset: "usdc" };
+  const totals = mintsReceived(tx.meta, payTo);
+  for (const [mint, amount] of totals) {
+    if (mint !== USDC_MINT && amount > 0n) return { ok: false, reason: "wrong_mint" };
   }
-
-  if (asset === "usdc") {
-    const received = tokenDelta(tx.meta, payTo, USDC_MINT);
-    if (received === USDC_BASE_UNITS) return { ok: true, asset: "usdc" };
-    const totals = mintsReceived(tx.meta, payTo);
-    for (const [mint, amount] of totals) {
-      if (mint !== USDC_MINT && amount > 0n) return { ok: false, reason: "wrong_mint" };
-    }
-    return { ok: false, reason: "wrong_amount" };
-  }
-
-  return { ok: false, reason: "invalid" };
+  return { ok: false, reason: "wrong_amount" };
 }
