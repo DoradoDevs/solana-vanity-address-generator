@@ -1,8 +1,8 @@
 import { defineConfig } from "vite";
-import { SECURITY_HEADERS } from "./src/headers.js";
+import { CONNECT_SRC, SECURITY_HEADERS } from "./src/headers.js";
 
 // Dev keeps Vite's module graph and HMR websocket working.
-// Preview and production stay on connect-src 'none'.
+// Preview uses the production policy: functions only, no public RPC.
 const devHeaders = {
   ...SECURITY_HEADERS,
   "Content-Security-Policy": [
@@ -11,7 +11,7 @@ const devHeaders = {
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
     "img-src 'self' data:",
-    "connect-src 'self' ws:",
+    `connect-src ${CONNECT_SRC} 'self' ws: http://localhost:5173 http://127.0.0.1:5173`,
     "worker-src 'self' blob:",
     "frame-ancestors 'none'",
     "form-action 'none'",

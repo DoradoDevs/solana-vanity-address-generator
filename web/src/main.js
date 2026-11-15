@@ -9,6 +9,7 @@ import {
   ADDRESS_LENGTH,
 } from "../../shared/grind-math.js";
 import { isLongPattern, isPublishableTipAddress, resolveBatch } from "../../shared/pro.js";
+import { consumePaidGrind, ensurePaid, initPay } from "./pay.js";
 
 const output = document.getElementById("output");
 const inputLine = document.getElementById("input-line");
@@ -437,6 +438,12 @@ async function promptRestart() {
 }
 
 async function runSetup() {
+  const paid = await ensurePaid();
+  if (!paid) {
+    print("  A $1 payment is required before grinding.", "amber");
+    return;
+  }
+
   let pattern;
   while (true) {
     pattern = (await waitForInput("  Enter desired pattern > ")).trim();
@@ -556,6 +563,14 @@ async function runSetup() {
     return;
   }
 
+  const spent = await consumePaidGrind();
+  if (!spent.ok) {
+    print(`  ${spent.message}`, "red");
+    print();
+    await runSetup();
+    return;
+  }
+
   print();
   print(`  Grinding with ${threadCount} worker${threadCount === 1 ? "" : "s"}…`, "bright");
   print("  Press Stop, Esc, or Ctrl+C to stop.", "dim");
@@ -575,7 +590,7 @@ async function boot() {
   const cores = navigator.hardwareConcurrency || "?";
   print(`  Cores:    ${cores}`, "dim");
   print("  Crypto:   @noble/curves ed25519", "dim");
-  print("  Network:  none after load — keys stay in this tab", "dim");
+  print("  Network:  payment check only — keys stay on this device", "dim");
   print("  Reveal:   the key leaves the screen about 60s after a match", "dim");
   print();
   print("  Base58:   1-9  A-H  J-N  P-Z  a-k  m-z", "bright");
@@ -689,7 +704,7 @@ function initSupport() {
     }
     if (tipNote) {
       tipNote.textContent =
-        "Public address only. Sending SOL is optional and happens in your own wallet. This page never builds a transaction.";
+        "Public address only. A tip is optional. The $1 grind payment is a separate transfer checked by this site.";
     }
   }
 
@@ -718,4 +733,5 @@ document.querySelectorAll('a[href="#terminal-section"]').forEach((link) => {
 initMatrix();
 initEstimator();
 initSupport();
+initPay();
 boot();

@@ -724,6 +724,72 @@ tbody tr.hard td { color: var(--red); }
   border-color: transparent;
 }
 
+.pay-gate {
+  max-width: 860px;
+  margin: 12px auto 0;
+  padding: 0 24px;
+}
+
+.pay-gate h2 {
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  text-align: center;
+  color: #fff;
+}
+
+.pay-gate > p,
+.pay-quote,
+.pay-status,
+.pay-url {
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.pay-actions,
+.pay-wallets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin: 14px 0;
+}
+
+.pay-actions button,
+.pay-wallet {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  background: transparent;
+  color: var(--accent2);
+  border: 1px solid rgba(20, 241, 149, 0.45);
+  border-radius: 999px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.pay-gate.paid {
+  outline: 1px solid rgba(20, 241, 149, 0.35);
+  border-radius: 16px;
+  padding-bottom: 12px;
+}
+
+#pay-qr {
+  display: block;
+  margin: 12px auto;
+  background: #fff;
+  border-radius: 12px;
+}
+
+#pay-qr[hidden] { display: none !important; }
+
+.pay-url {
+  word-break: break-all;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  max-width: 640px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 #footer {
   text-align: center;
   padding: 56px 24px 40px;

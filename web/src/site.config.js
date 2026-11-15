@@ -1,21 +1,17 @@
 /**
  * Public site settings baked into the static build.
  *
- * Edit this file, then rebuild. The browser cannot fetch a config later:
- * Content-Security-Policy connect-src 'none' blocks every network call.
- *
- * NEVER put a private key, seed phrase, API key, or payment secret here.
- * tipAddress is a public Solana receive address only. Leave it "" until
- * you set your own — a blank value is hidden, so visitors cannot send
- * SOL to a placeholder.
+ * The payment receiver is PAY_TO_ADDRESS on the server (this public
+ * address by default). Never put a private key, seed, RPC URL, or
+ * UNLOCK_SECRET in this file.
  */
 export const siteConfig = {
   siteName: "VanityGrinder",
   siteUrl: "https://vanitygrinder.com",
   repositoryUrl: "https://github.com/DoradoDevs/solana-vanity-address-generator",
 
-  /** Public Solana address. "" keeps the tip control hidden. */
-  tipAddress: "",
+  /** Optional public tip address. Same default as PAY_TO_ADDRESS. */
+  tipAddress: "crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp",
 
   pro: {
     /**

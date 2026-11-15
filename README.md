@@ -4,7 +4,7 @@ Generate custom **Solana vanity addresses** — wallet addresses that start with
 
 | | What it is | Best for |
 |---|---|---|
-| [`web/`](web) | A **zero-network** browser app. Every keypair is generated locally in Web Workers behind a strict Content-Security-Policy (`connect-src 'none'`). | Anyone — no install, keys never leave the tab. |
+| [`web/`](web) | A browser app. Every keypair is generated locally in Web Workers. The page may call only its own Netlify Functions, and only to verify a $1 SOL or USDC payment. | Anyone — keys stay on the device. |
 | [`cli/`](cli) | A **multi-threaded** Node.js command-line grinder. | Max throughput on a workstation or server. |
 
 Both use audited [`@noble/curves`](https://github.com/paulmillr/noble-curves) ed25519 and never transmit, log, or persist a generated key.
@@ -15,7 +15,7 @@ Both use audited [`@noble/curves`](https://github.com/paulmillr/noble-curves) ed
 
 Vanity grinding means generating enormous numbers of real keypairs and keeping the one whose address matches. That only stays safe if the keys never leave your machine — so this tool is built around that:
 
-- **100% local generation.** No servers, no API calls. The web app *enforces* this with a CSP that blocks every outbound connection (`connect-src 'none'`) and ships **no web fonts, analytics, cookies, or trackers**.
+- **Keys stay on the device.** The grind runs in Web Workers and does not open a connection. The page may call only `/.netlify/functions/` to quote and verify a $1 payment. No web fonts, analytics, cookies, or trackers. The Solana RPC URL stays in a Netlify environment variable.
 - **Keys live in memory only.** Raw secret-key bytes are zeroed immediately after they're encoded; non-matching keys are discarded each cycle.
 - **Web app hardening.** DOM is built with `textContent` only (no `innerHTML`, no XSS surface). About 60 seconds after a match the terminal wipes itself; a key that is still on screen redacts after 2 minutes. Copying a private key clears the clipboard about 60 seconds later when the browser allows it.
 - **CSPRNG required.** Generation refuses to run without `crypto.getRandomValues`.
@@ -52,9 +52,9 @@ Open the printed localhost URL. The interface is a retro terminal — enter a pa
 npm test     # difficulty math, Base58, CSP headers, CLI worker smoke test
 ```
 
-Deploy `web/dist` as a static site. Exact Cloudflare Pages and Vercel steps, plus DNS for `vanitygrinder.com`, are in [DEPLOY.md](DEPLOY.md). `web/public/_headers` and `web/vercel.json` both send `connect-src 'none'`.
+Deploy on Netlify. Steps, DNS for `vanitygrinder.com`, and the `PAY_TO_ADDRESS`, `SOLANA_RPC_URL`, and `UNLOCK_SECRET` variables are in [DEPLOY.md](DEPLOY.md). The default receive address is public: `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp`.
 
-Optional and still offline: set a **public** tip address or the Pro batch flag in [`web/src/site.config.js`](web/src/site.config.js) before building. There is no payment key and the page never builds a transaction. Leave `tipAddress` as `""` and the tip line stays hidden.
+The optional tip line uses that same address. The Pro flag in [`web/src/site.config.js`](web/src/site.config.js) still only toggles local batch generation. It does not take a payment.
 
 ---
 
