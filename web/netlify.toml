@@ -16,6 +16,9 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  # esbuild follows this import, and the zip step must be allowed to see
+  # shared/ which lives outside the web/ base directory.
+  included_files = ["../shared/**"]
 
 [dev]
   command = "npm run dev -- --host 127.0.0.1 --port 5173 --strictPort"
