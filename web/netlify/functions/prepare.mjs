@@ -1,6 +1,6 @@
 import { Connection, PublicKey } from "@solana/web3.js";
 import { ACCOUNT_SIZE, getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { PAY_ERRORS } from "../../../../shared/pay-copy.js";
+import { PAY_ERRORS } from "../../../shared/pay-copy.js";
 import { payToAddress, solanaRpcUrl, USDC_MINT } from "./lib/constants.js";
 import { isAddress } from "./lib/address.js";
 import { assessFunds, readTokenAmount } from "./lib/funds.js";

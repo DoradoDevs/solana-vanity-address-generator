@@ -12,6 +12,7 @@ import { assessFunds, readTokenAmount } from "../netlify/functions/lib/funds.js"
 import { memoryStore } from "../netlify/functions/lib/store.js";
 import { readUnlockToken } from "../netlify/functions/lib/token.js";
 import { buildUnsignedTransaction } from "../netlify/functions/lib/tx.js";
+import prepare from "../netlify/functions/prepare.mjs";
 import { consumeUnlock, verifyPayment } from "../netlify/functions/lib/verify.js";
 import { NETWORK_FEE_NOTE, PAY_ERRORS, classifyWalletError } from "../../shared/pay-copy.js";
 
@@ -90,6 +91,10 @@ function paymentArgs(overrides) {
     ...overrides,
   };
 }
+
+test("prepare loads and its shared pay-copy import resolves", () => {
+  assert.equal(typeof prepare, "function");
+});
 
 test("verify accepts an exact 1.00 USDC payment and returns an unlock token", async () => {
   const store = memoryStore();
