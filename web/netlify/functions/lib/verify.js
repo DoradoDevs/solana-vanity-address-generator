@@ -1,7 +1,8 @@
 import { TOLERANCE_BPS } from "./constants.js";
 import { fetchSolPriceUsd, lamportsForOneUsd, minAcceptableLamports } from "./price.js";
 import { readUnlockToken, signUnlockToken } from "./token.js";
-import { assessTransaction, isAddress } from "./tx.js";
+import { isAddress } from "./address.js";
+import { assessTransaction } from "./assess.js";
 
 async function findFinalized(rpc, reference) {
   const signatures = await rpc.getSignaturesForAddress(reference);
@@ -52,6 +53,7 @@ export async function verifyPayment({
   }
 
   const found = await findFinalized(rpc, reference);
+  if (found.empty) return { ok: false, status: 404, reason: "not_found" };
   if (!found.tx) return { ok: false, status: 202, reason: "pending" };
 
   const assessment = assessTransaction(found.tx, {

@@ -47,7 +47,7 @@ npm run build
 ## Netlify site
 
 1. Netlify → Add new site → Import an existing project. Choose this private GitHub repository. The free tier allows a private repo.
-2. The repo's `netlify.toml` sets the base directory to `web`, the build to `npm run build`, the publish directory to `dist`, and the functions directory to `web/netlify/functions`.
+2. The site base directory is `web`. Netlify reads `web/netlify.toml` (not only the repo-root file) for `[functions]`. That file sets `node_bundler = "esbuild"`. The root `netlify.toml` repeats the same functions block and sets `base = "web"`.
 3. If the UI asks for a base directory, set `web`. Leave the build command and publish directory as the toml specifies (`npm run build`, `dist`).
 4. Add `SOLANA_RPC_URL` and `UNLOCK_SECRET`. Leave `PAY_TO_ADDRESS` unset to use the default, or set it to replace that address.
 5. Deploy. Confirm the function list shows `quote`, `prepare`, `verify`, and `consume`.

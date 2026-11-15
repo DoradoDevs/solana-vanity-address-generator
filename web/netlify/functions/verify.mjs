@@ -1,6 +1,6 @@
 import { payToAddress, solanaRpcUrl, unlockSecret } from "./lib/constants.js";
 import { json, readJson } from "./lib/http.js";
-import { blobStore } from "./lib/store.js";
+import { openStore } from "./lib/store.js";
 import { verifyPayment } from "./lib/verify.js";
 
 function rpcClient(url) {
@@ -40,6 +40,7 @@ function rpcClient(url) {
 
 const REASONS = {
   pending: "Waiting for the payment to finalize.",
+  not_found: "No payment was found for that reference.",
   reused: "That payment was already used for a grind.",
   wrong_amount: "The payment amount does not cover $1.",
   wrong_mint: "The token received was not USDC.",
@@ -58,7 +59,7 @@ export default async function verify(request) {
   const body = await readJson(request);
   let store;
   try {
-    store = await blobStore();
+    store = await openStore();
   } catch {
     return json({ error: "Payment storage is unavailable.", reason: "config" }, 500);
   }

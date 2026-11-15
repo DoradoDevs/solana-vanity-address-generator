@@ -1,7 +1,7 @@
 import { payToAddress, TOLERANCE_BPS, USDC_MINT } from "./lib/constants.js";
 import { json } from "./lib/http.js";
 import { fetchSolPriceUsd, formatSolAmount, lamportsForOneUsd } from "./lib/price.js";
-import { isAddress } from "./lib/tx.js";
+import { isAddress } from "./lib/address.js";
 
 export default async function quote() {
   const payTo = payToAddress();

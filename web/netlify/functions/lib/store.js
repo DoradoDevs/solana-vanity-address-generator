@@ -11,9 +11,7 @@ export function memoryStore(initial = {}) {
   };
 }
 
-export async function blobStore() {
-  const { getStore } = await import("@netlify/blobs");
-  const store = getStore("grind-payments");
+function wrapBlobStore(store) {
   return {
     async get(key) {
       const value = await store.get(key, { type: "json" });
@@ -23,4 +21,20 @@ export async function blobStore() {
       await store.setJSON(key, value);
     },
   };
+}
+
+export async function blobStore() {
+  const { getStore } = await import("@netlify/blobs");
+  return wrapBlobStore(getStore("grind-payments"));
+}
+
+/** Production uses Blobs. Local `netlify functions:serve` falls back to memory. */
+export async function openStore() {
+  try {
+    return await blobStore();
+  } catch (error) {
+    if (process.env.CONTEXT === "production") throw error;
+    console.warn(`Netlify Blobs unavailable (${error.message}); using a memory store`);
+    return memoryStore();
+  }
 }

@@ -1,7 +1,7 @@
 import { unlockSecret } from "./lib/constants.js";
 import { consumeUnlock } from "./lib/verify.js";
 import { json, readJson } from "./lib/http.js";
-import { blobStore } from "./lib/store.js";
+import { openStore } from "./lib/store.js";
 
 export default async function consume(request) {
   if (request.method !== "POST") return json({ error: "POST only." }, 405);
@@ -11,7 +11,7 @@ export default async function consume(request) {
   const body = await readJson(request);
   let store;
   try {
-    store = await blobStore();
+    store = await openStore();
   } catch {
     return json({ error: "Payment storage is unavailable.", reason: "config" }, 500);
   }
