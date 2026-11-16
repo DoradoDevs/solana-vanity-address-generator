@@ -65,7 +65,7 @@ npm test     # payment verification against a mock chain, the functions end to e
 
 The full gate is `cd web && npm ci && npm test && npm run build`, then `cd cli && npm ci && npm test`. Node.js 22.12 or newer for `web/`.
 
-Deploy on Netlify. Steps, DNS for `vanitygrinder.com`, and the `PAY_TO_ADDRESS`, `SOLANA_RPC_URL`, and `UNLOCK_SECRET` variables are in [DEPLOY.md](DEPLOY.md). The default receive address is public: `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp`. How the payment is verified, what was audited, and what is still open are in [kb/](kb/README.md).
+Deploy on Netlify. Steps, DNS for `vanitygrinder.com`, and the `PAY_TO_ADDRESS`, `SOLANA_RPC_URL`, and `UNLOCK_SECRET` variables are in [DEPLOY.md](DEPLOY.md). The receive address is public and pinned in [`shared/payment.js`](shared/payment.js): `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp`. The page refuses to sign a transfer to anywhere else. How the payment is verified, what was audited, and what is still open are in [kb/](kb/README.md).
 
 The optional tip line uses that same address. The Pro flag in [`web/src/site.config.js`](web/src/site.config.js) still only toggles local batch generation. It does not take a payment.
 

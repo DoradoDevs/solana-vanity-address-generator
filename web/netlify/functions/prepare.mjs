@@ -28,8 +28,10 @@ const UNAVAILABLE = "The Solana network is unreachable from the server.";
 export default async function prepare(request) {
   if (request.method !== "POST") return postOnly();
   const rpcUrl = solanaRpcUrl();
+  if (!rpcUrl) return json({ error: "Payments are not configured." }, 500);
+  // PAY_TO_ADDRESS names a payee other than the pinned one: build nothing.
   const payTo = payToAddress();
-  if (!rpcUrl || !isAddress(payTo)) return json({ error: "Payments are not configured." }, 500);
+  if (!payTo) return json({ error: "Payments are not configured.", reason: "config" }, 503);
 
   const body = await readJson(request);
   const payer = body?.payer;

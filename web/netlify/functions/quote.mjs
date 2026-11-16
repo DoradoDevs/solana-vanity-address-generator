@@ -1,13 +1,12 @@
 import { payToAddress, USDC_MINT } from "./lib/constants.js";
 import { json } from "./lib/http.js";
-import { isAddress } from "./lib/address.js";
 
 export const config = { path: "/api/quote" };
 
 /** The fixed price and where it goes. No RPC call and nothing secret. */
 export default async function quote() {
   const payTo = payToAddress();
-  if (!isAddress(payTo)) return json({ error: "Payment address is not configured." }, 500);
+  if (!payTo) return json({ error: "Payment address is not configured." }, 503);
 
   return json({
     payTo,

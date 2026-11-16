@@ -33,6 +33,9 @@ export default async function verify(request) {
   const secret = unlockSecret();
   const rpcUrl = solanaRpcUrl();
   if (!secret || !rpcUrl) return reply(500, "config");
+  // PAY_TO_ADDRESS names a payee other than the pinned one. 503: the page keeps any saved payment.
+  const payTo = payToAddress();
+  if (!payTo) return reply(503, "config");
 
   const body = await readJson(request);
   if (!body) return reply(400, "invalid");
@@ -44,7 +47,7 @@ export default async function verify(request) {
       signature: body.signature,
       rpc: createRpc(rpcUrl),
       store: blobStore(),
-      payTo: payToAddress(),
+      payTo,
       secret,
     });
   } catch (error) {

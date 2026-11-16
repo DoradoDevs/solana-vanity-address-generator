@@ -14,11 +14,11 @@ Set these in the Netlify UI: Site configuration → Environment variables. Scope
 
 | Name | Required | Value |
 |---|---|---|
-| `PAY_TO_ADDRESS` | No | Public Solana address that receives the $1. The default is in code, `DEFAULT_PAY_TO` in `web/netlify/functions/lib/constants.js`: `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp`. Set this only to override that address. |
+| `PAY_TO_ADDRESS` | No | Leave unset. The address that receives the $1 is pinned in code, `PAY_TO` in `shared/payment.js`: `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp`. If this variable is set, it must be exactly that address; any other value makes quote, prepare and verify answer 503, so a changed environment cannot redirect payments. |
 | `SOLANA_RPC_URL` | Yes | HTTPS Solana mainnet RPC, for example a Helius or Triton URL. Used only inside the functions. A URL with an API key stays server-side: it is never put in a response, an error, or a log line. |
 | `UNLOCK_SECRET` | Yes | Random string of at least 16 characters. `openssl rand -base64 32`. Signs the unlock token. Unset or shorter than 16 characters, verify and consume answer 500 and no grind can be unlocked. Changing it voids tokens already issued (they last ten minutes); payments are unaffected and simply verify again. |
 
-`web/src/site.config.js` shows the same address as an optional tip. It is not a secret. Changing `PAY_TO_ADDRESS` in the Netlify UI changes where payments go without a rebuild; the quote response also updates the tip line on the page, and the copy button copies what is shown.
+To change where payments go, change `PAY_TO` in `shared/payment.js` (and the tip address in `web/src/site.config.js`) and deploy. The page and the functions are built from the same constant: before the wallet is asked to sign, the page decodes the transaction prepare returned and refuses it unless it is exactly 1.00 USDC of the USDC mint from the connected wallet's USDC account to that address's USDC account, naming this attempt's reference, with nothing else in it but the payee account's idempotent creation. The tip address is not a secret.
 
 The payee's USDC associated-token account is created inside the payment transaction if it does not exist yet. The connected wallet is the fee payer and covers that rent the first time. The price is exactly 1.00 USDC. There is no SOL payment and no price oracle.
 
@@ -29,7 +29,7 @@ Each function has its own path under `/api/`. The default `/.netlify/functions/<
 | Path | Role |
 |---|---|
 | `GET /api/quote` | The fixed `1.00` USDC amount, the USDC mint, and the receive address. No RPC call. |
-| `POST /api/prepare` | Body `{ payer, claim }`. Builds the unsigned transfer of exactly 1.00 USDC from the wallet's USDC account to the payee's, with an idempotent create-account instruction and a read-only reference account. The reference is the SHA-256 of the caller's claim. Two RPC requests: balances and a blockhash. Rate limited to 12 a minute per visitor. |
+| `POST /api/prepare` | Body `{ payer, claim }`. Builds the unsigned transfer of exactly 1.00 USDC from the wallet's USDC account to the payee's, with an idempotent create-account instruction and a read-only reference account. The reference is the SHA-256 of the caller's claim. Two RPC requests: balances and a blockhash. Rate limited to 12 a minute per visitor. The page checks the result byte by byte before its wallet sees it (`web/src/transfer-check.js`). |
 | `POST /api/verify` | Body `{ claim, signature }`, the signature being the one the wallet returned (optional). With it, verify reads that transaction directly and ignores anything else that names the reference. Without it, the payment is the oldest successful transaction naming the claim's reference. Requires finality, checks that the transaction names the reference, and checks from the recorded token balances that the payee ended up with exactly 1.00 USDC more. Returns an unlock token, valid ten minutes. A 400 is only ever a verdict about the claim's own transaction; when the node's answer cannot be relied on, verify answers 503 and the page keeps the payment. Writes nothing. Rate limited to 60 a minute per visitor. |
 | `POST /api/consume` | Body `{ token }`. Records the transaction as spent with one conditional write to Netlify Blobs. The first token wins; every other token for that transaction is refused. The winning token gets the same answer if it is sent again, even after it expires, so a lost response does not cost the customer their grind. The terminal starts one grind only after this succeeds. |
 
@@ -62,7 +62,7 @@ npm test
 1. Netlify → Add new site → Import an existing project. Choose this GitHub repository.
 2. The site base directory is `web`. Netlify reads `web/netlify.toml` in that case and the root `netlify.toml` otherwise; the two are kept identical apart from `base`.
 3. If the UI asks for a base directory, set `web`. Leave the build command and publish directory as the toml specifies (`npm run build`, `dist`).
-4. Add `SOLANA_RPC_URL` and `UNLOCK_SECRET`. Leave `PAY_TO_ADDRESS` unset to use the default, or set it to replace that address.
+4. Add `SOLANA_RPC_URL` and `UNLOCK_SECRET`. Leave `PAY_TO_ADDRESS` unset (or delete it if an older setup added it with another value).
 5. Deploy. Confirm the function list shows `quote`, `prepare`, `verify`, and `consume`, and that the deploy log lists rate limiting rules for `prepare` and `verify`. The free plan allows two such rules per project.
 6. Enable Blobs for the site if the dashboard asks. The free tier includes a Blobs quota; each paid grind stores one small record.
 7. Site configuration → Build & deploy → Deploy previews: turn off deploy previews for pull requests from forks, or require approval for them. The repository is public, the Blobs store is shared by every deploy of the site, and a preview runs the pull request's own functions. Nothing in the store can unlock a grind, but a hostile preview could mark customers' payments as spent.
@@ -122,7 +122,7 @@ Use the values in the Netlify UI if they differ. Wait until the domain shows a c
 ## Owner checklist
 
 - [ ] `SOLANA_RPC_URL` and `UNLOCK_SECRET` are set in the Netlify UI and are not in git.
-- [ ] `PAY_TO_ADDRESS` is unset (default `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp`) or set to another public address you control.
+- [ ] `PAY_TO_ADDRESS` is unset, or set to exactly `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp` (`PAY_TO` in `shared/payment.js`). `curl -s $SITE/api/quote` returns that address, not a 503.
 - [ ] `cd web && npm ci && npm test && npm run build` and `cd cli && npm ci && npm test` succeed.
 - [ ] The site is the Netlify project for this repository, not a Vercel project.
 - [ ] `vanitygrinder.com` resolves to Netlify and HTTPS is valid. `www` redirects to the apex.

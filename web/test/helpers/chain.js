@@ -3,10 +3,10 @@
 import { randomBytes } from "node:crypto";
 import { encodeBase58 } from "../../../shared/base58.js";
 import { referenceForClaim } from "../../netlify/functions/lib/claim.js";
-import { DEFAULT_PAY_TO, TOKEN_PROGRAM_ID, USDC_MINT } from "../../netlify/functions/lib/constants.js";
+import { PAY_TO as PINNED_PAY_TO, TOKEN_PROGRAM_ID, USDC_MINT } from "../../netlify/functions/lib/constants.js";
 import { SIGNATURE_LIMIT } from "../../netlify/functions/lib/rpc.js";
 
-export const PAY_TO = DEFAULT_PAY_TO;
+export const PAY_TO = PINNED_PAY_TO;
 export const PAYER = "6ASf5EcmmEHTgDJ4X4ZT5vT6iHVJBXPg5AN5YoTCpGWt";
 export const PAYER_ATA = "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin";
 export const PAYEE_ATA = "4Nd1mBQtrMJVYVfKf2PJy9NZUZdTAsp7D4xWLs4gDB4T";

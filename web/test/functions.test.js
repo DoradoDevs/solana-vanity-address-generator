@@ -10,7 +10,8 @@ import prepare, { config as prepareConfig } from "../netlify/functions/prepare.m
 import quote, { config as quoteConfig } from "../netlify/functions/quote.mjs";
 import verify, { config as verifyConfig } from "../netlify/functions/verify.mjs";
 import { referenceForClaim } from "../netlify/functions/lib/claim.js";
-import { DEFAULT_PAY_TO, USDC_MINT } from "../netlify/functions/lib/constants.js";
+import { PAY_TO, USDC_MINT } from "../netlify/functions/lib/constants.js";
+import { checkPreparedTransfer } from "../src/transfer-check.js";
 import { blobStore, spentKey } from "../netlify/functions/lib/store.js";
 import { NETWORK_FEE_NOTE } from "../../shared/pay-copy.js";
 import { PAYER, balance, newClaim, newSignature } from "./helpers/chain.js";
@@ -42,7 +43,7 @@ beforeEach(() => {
   rpc.usdc.clear();
   rpc.lamports.set(PAYER, 50_000_000);
   rpc.usdc.set(PAYER, 5_000_000n);
-  rpc.usdc.set(DEFAULT_PAY_TO, 7_000_000n);
+  rpc.usdc.set(PAY_TO, 7_000_000n);
   rpc.resetCalls();
   blobs.connect();
   process.env.SOLANA_RPC_URL = rpc.url;
@@ -129,7 +130,7 @@ test("quote states the fixed price without touching the chain", async () => {
   const { status, body, headers } = await read(await quote());
   assert.equal(status, 200);
   assert.deepEqual(body.usdc, { mint: USDC_MINT, amount: "1.00", baseUnits: "1000000" });
-  assert.equal(body.payTo, DEFAULT_PAY_TO);
+  assert.equal(body.payTo, PAY_TO);
   assert.equal(headers.get("cache-control"), "no-store");
   assert.equal(rpc.totalCalls(), 0);
 });
@@ -157,7 +158,7 @@ test("prepare builds a 1.00 USDC transfer to the payee that names the claim's re
   const keys = transfer.keys.map((key) => ({ ...key, pubkey: key.pubkey.toBase58() }));
   assert.deepEqual(
     keys.map((key) => key.pubkey),
-    [ataOf(PAYER), USDC_MINT, ataOf(DEFAULT_PAY_TO), PAYER, reference]
+    [ataOf(PAYER), USDC_MINT, ataOf(PAY_TO), PAYER, reference]
   );
   assert.deepEqual(keys[4], { pubkey: reference, isSigner: false, isWritable: false });
   assert.equal(keys.filter((key) => key.isSigner).length, 1);
@@ -190,7 +191,7 @@ test("prepare refuses a wallet that cannot pay, with a reason the page can expla
 });
 
 test("before the payee's USDC account exists, the payer needs its rent as well as the fee", async () => {
-  rpc.usdc.delete(DEFAULT_PAY_TO);
+  rpc.usdc.delete(PAY_TO);
   rpc.lamports.set(PAYER, 5_000 + 2_039_280 - 1);
   let result = await read(await prepare(post("/api/prepare", { payer: PAYER, claim: newClaim().claim })));
   assert.equal(result.status, 402);
@@ -239,16 +240,52 @@ test("when the RPC node fails, prepare says so and never echoes the RPC URL", as
   assert.ok(logs.some((line) => line.startsWith("prepare failure ")));
 });
 
-test("with no RPC URL or an unusable payee address, prepare is a 500 and nothing else", async () => {
+test("with no RPC URL, prepare is a 500 and nothing else", async () => {
   delete process.env.SOLANA_RPC_URL;
-  let result = await read(await prepare(post("/api/prepare", { payer: PAYER, claim: newClaim().claim })));
+  const result = await read(await prepare(post("/api/prepare", { payer: PAYER, claim: newClaim().claim })));
   assert.equal(result.status, 500);
-  process.env.SOLANA_RPC_URL = rpc.url;
-  process.env.PAY_TO_ADDRESS = "not-an-address";
-  result = await read(await prepare(post("/api/prepare", { payer: PAYER, claim: newClaim().claim })));
-  assert.equal(result.status, 500);
+  assert.equal(result.body.transaction, undefined);
   assert.equal(rpc.totalCalls(), 0);
   assertNoRpcUrl(result.body);
+});
+
+test("a PAY_TO_ADDRESS other than the pinned payee closes quote, prepare and verify", async () => {
+  const { claim, transaction } = await preparePayment();
+  land(transaction);
+  rpc.resetCalls();
+  // A tampered or mistyped environment cannot send payments, or the page, anywhere else.
+  for (const value of [PAYER, "not-an-address", `${PAY_TO}x`]) {
+    process.env.PAY_TO_ADDRESS = value;
+    const q = await read(await quote());
+    assert.equal(q.status, 503, value);
+    assert.equal(q.body.payTo, undefined);
+    const p = await read(await prepare(post("/api/prepare", { payer: PAYER, claim: newClaim().claim })));
+    assert.equal(p.status, 503, value);
+    assert.equal(p.body.transaction, undefined);
+    const v = await read(await verify(post("/api/verify", { claim })));
+    assert.equal(v.status, 503, value);
+    assert.equal(v.body.reason, "config");
+    assert.equal(v.body.token, undefined);
+  }
+  assert.equal(rpc.totalCalls(), 0);
+
+  // Set to the pinned payee itself, stray whitespace and all, everything works.
+  process.env.PAY_TO_ADDRESS = ` ${PAY_TO}\n`;
+  assert.equal((await read(await quote())).body.payTo, PAY_TO);
+  assert.equal((await read(await verify(post("/api/verify", { claim })))).status, 200);
+});
+
+test("the transfer prepare returns passes the page's own check, so the page and the functions agree", async () => {
+  for (const payeeAccountExists of [true, false]) {
+    if (!payeeAccountExists) rpc.usdc.delete(PAY_TO);
+    rpc.lamports.set(PAYER, 50_000_000);
+    const { claim, transaction } = await preparePayment();
+    const bytes = new Uint8Array(Buffer.from(transaction, "base64"));
+    assert.equal(await checkPreparedTransfer(bytes, { payer: PAYER, claim }), null);
+    // And not for another wallet or another attempt.
+    assert.notEqual(await checkPreparedTransfer(bytes, { payer: newClaim().reference, claim }), null);
+    assert.notEqual(await checkPreparedTransfer(bytes, { payer: PAYER, claim: newClaim().claim }), null);
+  }
 });
 
 // ── prepare → pay → verify → consume ─────────────────────────────────────────

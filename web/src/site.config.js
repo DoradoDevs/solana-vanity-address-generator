@@ -1,8 +1,8 @@
 /**
  * Public site settings baked into the static build.
  *
- * The payment receiver is PAY_TO_ADDRESS on the server (this public
- * address by default). Never put a private key, seed, RPC URL, or
+ * The payment receiver is pinned in shared/payment.js, for the page and
+ * the functions alike. Never put a private key, seed, RPC URL, or
  * UNLOCK_SECRET in this file.
  */
 export const siteConfig = {
@@ -10,7 +10,7 @@ export const siteConfig = {
   siteUrl: "https://vanitygrinder.com",
   repositoryUrl: "https://github.com/DoradoDevs/solana-vanity-address-generator",
 
-  /** Optional public tip address. Same default as PAY_TO_ADDRESS. */
+  /** Optional public tip address. The same address as the pinned payee. */
   tipAddress: "crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp",
 
   pro: {

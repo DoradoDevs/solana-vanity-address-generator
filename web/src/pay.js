@@ -2,13 +2,15 @@
  * The payment gate: Wallet Standard discovery (@wallet-standard/app) and the
  * page around it. Phantom, Solflare, Backpack, and other Solana wallets
  * register on this page. The browser does not receive the RPC URL: the server
- * builds the 1.00 USDC transfer, and the connected wallet is the fee payer
+ * builds the 1.00 USDC transfer, transfer-check.js confirms it is exactly
+ * that before the wallet sees it, and the connected wallet is the fee payer
  * that signs and sends it. What a payment is and how it is followed to the
  * end lives in pay-flow.js; this file is wallets, buttons and wording.
  */
 import { getWallets } from "@wallet-standard/app";
 import { NETWORK_FEE_NOTE, PAY_ERRORS, classifyWalletError, messageForWalletError } from "../../shared/pay-copy.js";
 import { browserStorage, createPayFlow } from "./pay-flow.js";
+import { checkPreparedTransfer } from "./transfer-check.js";
 import { offerInAppBrowserLinks, phantomBrowseUrl, solflareBrowseUrl } from "./wallet-links.js";
 
 const PREFERRED = ["Phantom", "Solflare", "Backpack"];
@@ -29,6 +31,8 @@ const STOPPED =
 const CANCELLED = "Payment cancelled. Nothing was charged for this attempt.";
 const ALREADY_PAID = "This browser already holds a paid grind. Finish the setup in the terminal to start it.";
 const RESUMING = "Checking the payment you already started…";
+const REFUSED =
+  "The payment the server built is not exactly 1.00 USDC to VanityGrinder's address, so this page did not send it to your wallet. Nothing was charged.";
 
 async function post(name, body) {
   const response = await fetch(`/api/${name}`, {
@@ -258,6 +262,20 @@ async function payWithWallet(wallet) {
     } catch {
       flow.forget();
       setStatus("Payment setup is unreachable. Nothing was charged.");
+      return;
+    }
+
+    // The server builds the transfer; this page decides whether it is the one to sign.
+    let problem;
+    try {
+      problem = await checkPreparedTransfer(bytes, { payer: account.address, claim });
+    } catch {
+      problem = "check failed";
+    }
+    if (problem) {
+      flow.forget();
+      console.warn(`payment refused before signing: ${problem}`);
+      setStatus(REFUSED);
       return;
     }
 

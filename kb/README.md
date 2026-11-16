@@ -32,8 +32,8 @@ The grind runs only in the browser (or the CLI). The server never sees a key, a 
 
 ## Trust boundaries
 
-- **The browser trusts** its own bundle and the wallet. It holds the claim and, once paid, the unlock token. It decides when to start a grind. A modified page can grind without paying. That is accepted: the key never goes to the server, so the server cannot meter the work. The paywall protects paying customers, not revenue.
-- **The functions trust** the RPC node in `SOLANA_RPC_URL` for chain data, Netlify Blobs for the ledger, and `UNLOCK_SECRET`. They trust nothing a caller asserts. The claim only selects which reference the caller may speak for. The optional signature only says where to look. Everything that grants a grind is read from the finalized transaction.
+- **The browser trusts** its own bundle and the wallet, not the server's transaction: it decodes what prepare built and signs nothing but the exact expected transfer (see [The page's check before signing](#the-pages-check-before-signing)). It holds the claim and, once paid, the unlock token. It decides when to start a grind. A modified page can grind without paying. That is accepted: the key never goes to the server, so the server cannot meter the work. The paywall protects paying customers, not revenue.
+- **The functions trust** the RPC node in `SOLANA_RPC_URL` for chain data, Netlify Blobs for the ledger, and `UNLOCK_SECRET`. The payee is not configuration: it is `PAY_TO` in `shared/payment.js`, and a `PAY_TO_ADDRESS` that names anything else makes quote, prepare and verify answer 503. They trust nothing a caller asserts. The claim only selects which reference the caller may speak for. The optional signature only says where to look. Everything that grants a grind is read from the finalized transaction.
 - **The RPC URL** carries an API key. It never goes into a response, an error message or a log line. `lib/rpc.js` turns every failure into `RpcError("<method>: <short cause>")`.
 - **The worker** is served with its own policy, `default-src 'none'`, so it cannot open a connection even if its code were changed.
 
@@ -48,6 +48,7 @@ saved in localStorage
                               reference = base58(sha256(claim))
                               getMultipleAccounts, getLatestBlockhash
         ◀── unsigned tx (CreateIdempotent + TransferChecked 1.00 USDC, reference read-only)
+page decodes and checks it (transfer-check.js); anything else: refuse, nothing sent
 wallet signs and sends ─────────────────────────────────────────▶ transaction lands
 signature saved with the claim
         ── POST /api/verify {claim, signature} ──▶  (polled every 3 s)
@@ -66,6 +67,18 @@ grind starts
 The page makes 32 random bytes, the claim, and saves it before it asks the server for anything. The transfer names `reference = base58(sha256(claim))` as a read-only account. The reference is public once the transaction lands. The claim is never sent anywhere except our own functions. Only the browser holding the claim can get a token for that payment. Knowing the reference, or any other account in the transaction, gives a third party nothing: verify looks up the hash of what it is sent, so nobody can choose the reference.
 
 While a claim is saved and unresolved, the page starts no second payment. A reload, a closed tab, or a wallet that never answers leaves the claim saved, and the page picks it up again.
+
+### The page's check before signing
+
+`web/src/transfer-check.js`, `checkPreparedTransfer`, run by `pay.js` between prepare and the wallet. The check makes no network call. It decodes the legacy transaction and refuses to sign unless all of the following hold:
+
+- There is exactly one signature slot, and the only signer is the connected wallet. That wallet is the fee payer.
+- The accounts are exactly these nine: the wallet, its USDC account, the payee's USDC account, the payee `PAY_TO`, the USDC mint, the reference, and the System, Token and Associated Token programs. Only the wallet and the two USDC accounts are writable.
+- There are exactly two instructions:
+  - Associated Token `CreateIdempotent` for the payee's USDC account.
+  - Token `TransferChecked` of 1,000,000 base units at 6 decimals of the USDC mint, from the wallet's USDC account to the payee's, with the wallet as authority and `sha256(claim)` as a read-only fifth account.
+
+The USDC account addresses are derived in the page: SHA-256 for the program address, and a BigInt ed25519 curve test that matches the runtime's (`isOnCurve`). Tests check both against `@solana/web3.js` and `spl-token`. A refusal clears the claim, logs the reason to the console and tells the user nothing was charged. The payee, mint and price come from `shared/payment.js`, the same constants the functions use, so a transfer the functions build always passes. `functions.test.js` checks exactly that.
 
 ### verify
 

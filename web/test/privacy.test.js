@@ -13,7 +13,7 @@ import {
   renderNetlifyHeaders,
 } from "../src/headers.js";
 import { siteConfig } from "../src/site.config.js";
-import { DEFAULT_PAY_TO } from "../netlify/functions/lib/constants.js";
+import { PAY_TO } from "../../shared/payment.js";
 import { isPublishableTipAddress } from "../../shared/pro.js";
 
 const read = (rel) => fs.readFileSync(new URL(rel, import.meta.url), "utf8");
@@ -139,7 +139,7 @@ test("the client sources never see a server secret, a third-party host, or an HT
 });
 
 test("tip address is the public receive address, never a secret key", () => {
-  assert.equal(siteConfig.tipAddress, DEFAULT_PAY_TO);
+  assert.equal(siteConfig.tipAddress, PAY_TO);
   assert.equal(isPublishableTipAddress(siteConfig.tipAddress), true);
   assert.equal(siteConfig.pro.enabled, false);
   assert.ok(siteConfig.tipAddress.length <= 44);
