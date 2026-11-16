@@ -84,7 +84,7 @@ async function main() {
     console.log("  Please enter y or n.");
   }
 
-  const cpuCount = os.cpus().length;
+  const cpuCount = Math.max(1, os.availableParallelism());
   const defaultThreads = Math.max(1, cpuCount - 1);
   console.log("");
   let threadCount;

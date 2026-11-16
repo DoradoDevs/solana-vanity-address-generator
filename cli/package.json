@@ -8,7 +8,8 @@
     "vanity-grinder": "index.js"
   },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "node --test test/*.test.js"
   },
   "keywords": [
     "solana",
@@ -27,7 +28,7 @@
     "directory": "cli"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.19"
   },
   "dependencies": {
     "@noble/curves": "^2.0.1"
