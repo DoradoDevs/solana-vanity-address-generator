@@ -1,7 +1,44 @@
 import { BASE58_ALPHABET } from "./base58.js";
 
-/** First character of a 44-char Solana address is almost always one of these. */
-export const COMMON_FIRST_CHARS = "23456789ABCDEFGHJ";
+/**
+ * The exact share of 32-byte keys whose Base58 address starts with each
+ * character. An address starts with "1" when the key's first byte is zero.
+ * Otherwise it is 43 or 44 characters long and its first character is the
+ * leading Base58 digit of the key read as a number, so the share of each
+ * character is a count of 256-bit values, done here in whole numbers.
+ *
+ * About 94% of addresses are 44 characters and begin with 2 to H, each a
+ * little under 6% of all addresses. The 44-character range runs out partway
+ * through J, which gets about 1.4%. Every other character begins only
+ * 43-character addresses, at about 0.1% each.
+ */
+function firstCharShares() {
+  const total = 1n << 256n;
+  const floor = 1n << 248n; // smallest value whose first byte is not zero
+  const counts = new Map([["1", floor]]);
+  for (const length of [43n, 44n]) {
+    const unit = 58n ** (length - 1n);
+    for (let digit = 1n; digit < 58n; digit++) {
+      const from = digit * unit > floor ? digit * unit : floor;
+      const to = (digit + 1n) * unit < total ? (digit + 1n) * unit : total;
+      if (to <= from) continue;
+      const ch = BASE58_ALPHABET[Number(digit)];
+      counts.set(ch, (counts.get(ch) ?? 0n) + (to - from));
+    }
+  }
+  const scale = 10n ** 15n;
+  return new Map([...counts].map(([ch, count]) => [ch, Number((count * scale) / total) / Number(scale)]));
+}
+
+const FIRST_CHAR_SHARE = firstCharShares();
+
+/** A first character that opens about 1 address in 17. */
+const COMMON_SHARE = FIRST_CHAR_SHARE.get("5");
+
+/** First characters that each open about 1 address in 17: 2 to 9 and A to H. */
+export const COMMON_FIRST_CHARS = BASE58_ALPHABET.split("")
+  .filter((ch) => FIRST_CHAR_SHARE.get(ch) > COMMON_SHARE / 2)
+  .join("");
 
 /** Typical Solana address length. Used for the "anywhere" window count. */
 export const ADDRESS_LENGTH = 44;
@@ -25,14 +62,8 @@ export function validatePattern(pattern) {
   return bad;
 }
 
-function rareFirstProb(ch) {
-  // ~6% of addresses are 43 chars and can start with any Base58 glyph.
-  if (ch === "1") return 1 / 250;
-  return 1 / 1000;
-}
-
 function singleFirstProb(ch) {
-  return COMMON_FIRST_CHARS.includes(ch) ? 1 / 17 : rareFirstProb(ch);
+  return FIRST_CHAR_SHARE.get(ch) ?? 0;
 }
 
 /**
@@ -66,22 +97,17 @@ export function uniformCharProbability(ch, caseSensitive) {
   return 1 / 58;
 }
 
-/** @returns {"common"|"uncommon"|"rare"} */
+/**
+ * How a prefix's first character compares with a common one.
+ * "uncommon" is 1 and J, which open a few addresses in a thousand.
+ * @returns {"common"|"uncommon"|"rare"}
+ */
 export function prefixRarity(pattern, caseSensitive) {
   const ch = pattern[0];
   if (!ch) return "rare";
-  if (caseSensitive) {
-    if (COMMON_FIRST_CHARS.includes(ch)) return "common";
-    if (ch === "1") return "uncommon";
-    return "rare";
-  }
-  if (
-    COMMON_FIRST_CHARS.includes(ch.toUpperCase()) ||
-    COMMON_FIRST_CHARS.includes(ch.toLowerCase())
-  ) {
-    return "common";
-  }
-  if (ch === "1") return "uncommon";
+  const share = firstCharProbability(ch, caseSensitive);
+  if (share > COMMON_SHARE / 2) return "common";
+  if (share > COMMON_SHARE / 20) return "uncommon";
   return "rare";
 }
 
@@ -221,13 +247,13 @@ export function describeJob({
   let rarity = null;
   if (text && position === "prefix" && validatePattern(text).length === 0) {
     rarity = prefixRarity(text, caseSensitive);
-    if (rarity === "uncommon") {
+    if (rarity !== "common") {
+      const share = firstCharProbability(text[0], caseSensitive);
+      const odds = `about ${(share * 100).toFixed(1)}% of addresses, roughly ${Math.round(COMMON_SHARE / share)}× rarer than a common one such as 2–9 or A–H`;
       warnings.push(
-        `"${text[0]}" is uncommon as a first character (about 0.4% of addresses, roughly 15× a common one such as 2–9, A–H, or J).`
-      );
-    } else if (rarity === "rare") {
-      warnings.push(
-        `"${text[0]}" is rare as a first character (about 0.1% of addresses, roughly 17× a common one such as 2–9, A–H, or J). A suffix is usually faster.`
+        rarity === "uncommon"
+          ? `"${text[0]}" is uncommon as a first character (${odds}).`
+          : `"${text[0]}" is rare as a first character (${odds}). A suffix is usually faster.`
       );
     }
   }

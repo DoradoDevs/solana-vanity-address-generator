@@ -4,7 +4,7 @@ Generate custom **Solana vanity addresses** — wallet addresses that start with
 
 | | What it is | Best for |
 |---|---|---|
-| [`web/`](web) | A browser app. Every keypair is generated locally in Web Workers. The page may call only its own Netlify Functions, and only for the grind payment: $1 in USDC per grind, paid from your wallet. | Anyone — keys stay on the device. |
+| [`web/`](web) | A browser app. Every keypair is generated locally in Web Workers. The page may connect only back to its own site, and only for the grind payment: $1 in USDC per grind, paid from your wallet. | Anyone — keys stay on the device. |
 | [`cli/`](cli) | A **multi-threaded** Node.js command-line grinder. | Max throughput on a workstation or server. |
 
 Both use audited [`@noble/curves`](https://github.com/paulmillr/noble-curves) ed25519 and never transmit, log, or persist a generated key.
@@ -15,10 +15,12 @@ Both use audited [`@noble/curves`](https://github.com/paulmillr/noble-curves) ed
 
 Vanity grinding means generating enormous numbers of real keypairs and keeping the one whose address matches. That only stays safe if the keys never leave your machine — so this tool is built around that:
 
-- **Keys stay on the device.** The grind runs in Web Workers and does not open a connection. The page may call only `/.netlify/functions/` to quote and verify the grind payment: $1 in USDC per grind, paid from your wallet. No web fonts, analytics, cookies, or trackers. The Solana RPC URL stays in a Netlify environment variable, and the grind worker never receives it.
-- **Keys live in memory only.** Raw secret-key bytes are zeroed immediately after they're encoded; non-matching keys are discarded each cycle.
-- **Web app hardening.** DOM is built with `textContent` only (no `innerHTML`, no XSS surface). About 60 seconds after a match the terminal wipes itself; a key that is still on screen redacts after 2 minutes. Copying a private key clears the clipboard about 60 seconds later when the browser allows it.
+- **Keys stay on the device.** The grind runs in Web Workers. The worker script is served with `Content-Security-Policy: default-src 'none'`, so the browser itself refuses to let it open a connection. The page's own policy is `connect-src 'self'`: it can reach only this site's `/api/` functions, which quote and verify the grind payment: $1 in USDC per grind, paid from your wallet. No web fonts, analytics, cookies, or trackers. The Solana RPC URL stays in a Netlify environment variable and never reaches the browser.
+- **Keys live in memory only.** Raw secret-key bytes are zeroed immediately after they're encoded; non-matching keys are discarded each cycle. Nothing about a key is written to storage. The one thing the page saves is a random payment claim, so a payment survives a reload.
+- **Web app hardening.** DOM is built with `textContent` only (no `innerHTML`, no XSS surface). A matched key stays hidden until you reveal it, so a grind that finishes while you are away waits for you. About 60 seconds after you reveal it the terminal wipes itself; a key line that is still on screen redacts after 2 minutes. Copying a private key clears the clipboard about 60 seconds later when the browser allows it. The page asks before you close a tab that holds a running grind or an unsaved key.
 - **CSPRNG required.** Generation refuses to run without `crypto.getRandomValues`.
+
+The payment gate is a convenience fee for the hosted page, not a lock on the algorithm: the keys are made in your browser, so the server cannot meter the work, and this repository and its CLI are free to run. What the server does guarantee is on the other side: one payment unlocks one grind, and only for the browser that paid. See [kb/README.md](kb/README.md).
 
 > ⚠️ **You are responsible for the private key.** Anyone who has it controls the wallet. For a high-value address, run the tool offline, save the key to a hardware wallet or password manager, and never paste it into a website.
 
@@ -34,7 +36,7 @@ npm start
 
 Interactive prompts walk you through the pattern, position (prefix / suffix / anywhere), case sensitivity, and thread count, show a difficulty estimate, then grind across all your CPU cores until it finds a match.
 
-Requires Node.js ≥ 18. Uses `worker_threads` for parallelism and `@noble/curves` for fast ed25519 keygen.
+Requires Node.js ≥ 20.19 (what `@noble/curves` 2 needs). Uses `worker_threads` for parallelism and `@noble/curves` for fast ed25519 keygen. `npm test` grinds a short pattern through the worker and through the whole program, and checks the result against OpenSSL.
 
 ## Web app (`web/`)
 
@@ -52,15 +54,18 @@ A grind costs $1 in USDC per grind, paid from your wallet. To exercise that loca
 npx netlify dev
 ```
 
-That serves the app and the payment functions together (port 8888). `npm run dev` by itself does not start those functions, so the quote and the payment check fail. `?dev=1` does not bypass payment, in dev or in production. One payment unlocks one grind, and only after the server has seen the finalized 1.00 USDC transfer.
+That serves the app and the payment functions (`/api/quote`, `/api/prepare`, `/api/verify`, `/api/consume`) together on port 8888, with a local stand-in for Netlify Blobs. `npm run dev` by itself does not start those functions, so the quote and the payment check fail. There is no development bypass of the payment. One payment unlocks one grind, and only after the server has seen the finalized 1.00 USDC transfer. A real `SOLANA_RPC_URL` means real mainnet: paying there spends real USDC.
 
-The terminal asks for the pattern first, measures your device for a couple of seconds, then says "Pay $1 to start grinding" and waits for the wallet payment. Vite bundles the worker into the production build.
+The terminal asks for the pattern first, measures your device for a couple of seconds, then says "Pay $1 to start grinding" and waits for the wallet payment. Vite bundles the worker into the production build and writes `dist/_headers`, the response headers Netlify serves.
 
 ```bash
-npm test     # difficulty math, Base58, CSP headers, CLI worker smoke test
+npm test     # payment verification against a mock chain, the functions end to end,
+             # key generation against RFC 8032 / OpenSSL / @solana/web3.js, and the built output
 ```
 
-Deploy on Netlify. Steps, DNS for `vanitygrinder.com`, and the `PAY_TO_ADDRESS`, `SOLANA_RPC_URL`, and `UNLOCK_SECRET` variables are in [DEPLOY.md](DEPLOY.md). The default receive address is public: `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp`.
+The full gate is `cd web && npm ci && npm test && npm run build`, then `cd cli && npm ci && npm test`. Node.js 22.12 or newer for `web/`.
+
+Deploy on Netlify. Steps, DNS for `vanitygrinder.com`, and the `PAY_TO_ADDRESS`, `SOLANA_RPC_URL`, and `UNLOCK_SECRET` variables are in [DEPLOY.md](DEPLOY.md). The default receive address is public: `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp`. How the payment is verified, what was audited, and what is still open are in [kb/](kb/README.md).
 
 The optional tip line uses that same address. The Pro flag in [`web/src/site.config.js`](web/src/site.config.js) still only toggles local batch generation. It does not take a payment.
 
@@ -80,7 +85,7 @@ Roughly how many keypairs a **case-sensitive suffix** takes. A letter pattern wi
 | 6 chars | 38.1B | 595M | ~4.4 days |
 | 7 chars | 2.21T | 17.2B | ~8.5 months |
 
-**Prefixes are harder than they look.** ~94% of Solana addresses are 44 characters, whose first character is restricted to `2`–`J`. A prefix starting with a lowercase or late-alphabet letter is ~17× rarer than the naive `1/58` estimate — the tools warn you and suggest suffix/anywhere instead.
+**Prefixes are harder than they look.** ~94% of Solana addresses are 44 characters, whose first character is restricted to `2`–`J`. A prefix starting with a lowercase or late-alphabet letter is ~17× rarer than the naive `1/58` estimate, and ~59× rarer than a common first character — the tools warn you and suggest suffix/anywhere instead. `J` itself is about 4× rarer than `2`–`H`, because the 44-character range ends partway through it.
 
 The Base58 alphabet excludes `0` (zero), `O` (capital o), `I` (capital i), and `l` (lowercase L) to avoid look-alikes.
 

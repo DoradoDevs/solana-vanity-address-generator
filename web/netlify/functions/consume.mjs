@@ -1,37 +1,38 @@
 import { unlockSecret } from "./lib/constants.js";
+import { describeFailure, json, postOnly, readJson } from "./lib/http.js";
+import { blobStore } from "./lib/store.js";
 import { consumeUnlock } from "./lib/verify.js";
-import { json, readJson } from "./lib/http.js";
-import { openStore } from "./lib/store.js";
 
-export function consumeMessage(result) {
-  if (result.ok) return "Unlocked.";
-  if (result.reason === "reused") return "That payment was already used for a grind.";
-  if (result.reason === "expired") return "The unlock expired. Verify the payment again.";
-  if (result.reason === "invalid") return "Payment still settling, retrying…";
-  return "The unlock token is not valid.";
+export const config = { path: "/api/consume" };
+
+const MESSAGES = {
+  reused: "That payment was already used for a grind.",
+  expired: "The unlock expired. Checking the payment again.",
+  bad: "The unlock token is not valid.",
+  config: "Payment verification is not configured.",
+  unavailable: "Payment verification is temporarily unavailable.",
+};
+
+function reply(status, reason) {
+  console.log(`consume ${reason || "unlocked"}`);
+  return json({ ok: status === 200, reason, message: reason ? MESSAGES[reason] : "Unlocked." }, status);
 }
 
 export default async function consume(request) {
-  if (request.method !== "POST") return json({ error: "POST only." }, 405);
+  if (request.method !== "POST") return postOnly();
   const secret = unlockSecret();
-  if (!secret) {
-    console.log("consume config");
-    return json({ error: "Payment verification is not configured.", reason: "config" }, 500);
-  }
+  if (!secret) return reply(500, "config");
 
   const body = await readJson(request);
-  let store;
-  try {
-    store = await openStore();
-  } catch {
-    console.log("consume config");
-    return json({ error: "Payment storage is unavailable.", reason: "config" }, 500);
-  }
+  if (!body) return reply(400, "bad");
 
-  const result = await consumeUnlock({ token: body?.token, store, secret });
-  console.log(`consume ${result.ok ? "unlocked" : result.reason || "rejected"}`);
-  return json(
-    { ok: result.ok, reason: result.reason, message: consumeMessage(result) },
-    result.status
-  );
+  let result;
+  try {
+    result = await consumeUnlock({ token: body.token, store: blobStore(), secret });
+  } catch (error) {
+    // The ledger did not answer, so nothing was spent. The same token can be sent again.
+    console.log(`consume failure ${describeFailure(error)}`);
+    return reply(503, "unavailable");
+  }
+  return reply(result.status, result.reason);
 }

@@ -9,3 +9,13 @@ export function isAddress(value) {
     return false;
   }
 }
+
+/** A transaction signature is 64 bytes of Base58. */
+export function isSignature(value) {
+  if (typeof value !== "string" || value.length < 64 || value.length > 88) return false;
+  try {
+    return decodeBase58(value).length === 64;
+  } catch {
+    return false;
+  }
+}

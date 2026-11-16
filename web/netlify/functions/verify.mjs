@@ -1,98 +1,57 @@
 import { payToAddress, solanaRpcUrl, unlockSecret } from "./lib/constants.js";
-import { json, readJson } from "./lib/http.js";
-import { openStore } from "./lib/store.js";
+import { describeFailure, json, postOnly, readJson } from "./lib/http.js";
+import { createRpc } from "./lib/rpc.js";
+import { blobStore } from "./lib/store.js";
 import { verifyPayment } from "./lib/verify.js";
 
-function rpcClient(url) {
-  return {
-    async getSignaturesForAddress(address) {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "getSignaturesForAddress",
-          params: [address, { limit: 25 }],
-        }),
-      });
-      const data = await response.json();
-      if (data.error) throw new Error("rpc signatures failed");
-      return data.result || [];
-    },
-    async getTransaction(signature) {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "getTransaction",
-          params: [signature, { encoding: "jsonParsed", commitment: "finalized", maxSupportedTransactionVersion: 0 }],
-        }),
-      });
-      const data = await response.json();
-      if (data.error) throw new Error("rpc transaction failed");
-      return data.result;
-    },
-  };
-}
+// Each call costs an RPC request, so the edge limits it per visitor. A page
+// that is waiting on finality polls about 20 times a minute.
+export const config = {
+  path: "/api/verify",
+  rateLimit: { windowLimit: 60, windowSize: 60, aggregateBy: ["ip", "domain"] },
+};
 
-const REASONS = {
-  pending: "Waiting for the payment to finalize.",
-  not_found: "No payment was found for that reference.",
+const MESSAGES = {
+  pending: "The payment is on chain and waiting to be finalized.",
+  not_found: "No payment has reached the chain for this attempt yet.",
   reused: "That payment was already used for a grind.",
-  wrong_amount: "The payment must be exactly 1.00 USDC.",
+  failed: "The payment transaction failed on chain, so no USDC moved.",
+  wrong_amount: "The transaction did not pay exactly 1.00 USDC.",
   wrong_mint: "The token received was not USDC.",
   invalid: "The payment could not be matched.",
   config: "Payment verification is not configured.",
+  unavailable: "Payment verification is temporarily unavailable.",
 };
 
-function logVerify(result) {
-  console.log(`verify ${result.ok ? "paid" : result.reason || "rejected"}`);
+function reply(status, reason, extra = {}) {
+  console.log(`verify ${reason || "paid"}`);
+  return json({ ok: status === 200, reason, message: reason ? MESSAGES[reason] : "Paid.", ...extra }, status);
 }
 
 export default async function verify(request) {
-  if (request.method !== "POST") return json({ error: "POST only." }, 405);
+  if (request.method !== "POST") return postOnly();
   const secret = unlockSecret();
   const rpcUrl = solanaRpcUrl();
-  if (!secret || !rpcUrl) {
-    logVerify({ ok: false, reason: "config" });
-    return json({ error: "Payment verification is not configured.", reason: "config" }, 500);
-  }
+  if (!secret || !rpcUrl) return reply(500, "config");
 
   const body = await readJson(request);
-  let store;
-  try {
-    store = await openStore();
-  } catch {
-    logVerify({ ok: false, reason: "config" });
-    return json({ error: "Payment storage is unavailable.", reason: "config" }, 500);
-  }
+  if (!body) return reply(400, "invalid");
 
+  let result;
   try {
-    const result = await verifyPayment({
-      reference: body?.reference,
-      asset: body?.asset,
-      rpc: rpcClient(rpcUrl),
-      store,
+    result = await verifyPayment({
+      claim: body.claim,
+      signature: body.signature,
+      rpc: createRpc(rpcUrl),
+      store: blobStore(),
       payTo: payToAddress(),
       secret,
     });
-    logVerify(result);
-    return json(
-      {
-        ok: result.ok,
-        reason: result.reason,
-        message: REASONS[result.reason] || (result.ok ? "Paid." : "Payment was not accepted."),
-        token: result.token,
-        expiresAt: result.expiresAt,
-        asset: result.asset,
-      },
-      result.status
-    );
-  } catch {
-    console.log("verify unreachable");
-    return json({ error: "The Solana network is unreachable from the server.", reason: "pending" }, 503);
+  } catch (error) {
+    // The RPC node or the ledger did not answer. Nothing is granted; the caller may ask again.
+    console.log(`verify failure ${describeFailure(error)}`);
+    return reply(503, "unavailable");
   }
+  if (!result.ok) return reply(result.status, result.reason);
+  return reply(200, undefined, { token: result.token, expiresAt: result.expiresAt });
 }

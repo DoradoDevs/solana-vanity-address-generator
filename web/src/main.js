@@ -321,6 +321,12 @@ let workerErrors = 0;
 let progressTimer = null;
 let clearCountdownTimer = null;
 let progressLine = null;
+/** A matched key exists in this tab and has not been wiped yet. */
+let holdingKey = false;
+/** The run is over, so nothing more will be added to the terminal. */
+let runFinished = false;
+/** At least one key has been put on screen. The wipe countdown waits for this. */
+let keyRevealed = false;
 
 function stopWorkers() {
   grinding = false;
@@ -387,6 +393,7 @@ function startClearCountdown() {
     if (remaining <= 0) {
       clearInterval(clearCountdownTimer);
       clearCountdownTimer = null;
+      holdingKey = false;
       clearOutput();
       print("  Terminal cleared. The key is no longer on screen.", "dim");
       print();
@@ -416,30 +423,54 @@ function showMatch(msg) {
     print(`  Address:     ${msg.address}`, "bright");
   }
 
+  // The key stays off the screen until it is asked for. A grind can finish hours
+  // after it was started, with nobody watching, and the wipe must not run then.
+  holdingKey = true;
   const keyLine = document.createElement("button");
   keyLine.type = "button";
   keyLine.className = "line key";
-  keyLine.textContent = `  Private Key: ${msg.privateKey}`;
-  keyLine.title = "Copy the private key";
-  keyLine.addEventListener("click", () => copyPrivateKey(msg.privateKey));
+  keyLine.textContent = "  Private Key: hidden. Click here to reveal it.";
+  keyLine.title = "Reveal the private key";
+  let shown = false;
+  keyLine.addEventListener("click", () => {
+    if (shown) {
+      copyPrivateKey(msg.privateKey);
+      return;
+    }
+    shown = true;
+    keyLine.textContent = `  Private Key: ${msg.privateKey}`;
+    keyLine.title = "Copy the private key";
+    scheduleKeyRedaction(keyLine);
+    keyRevealed = true;
+    startClearCountdownWhenReady();
+  });
   output.appendChild(keyLine);
-  scheduleKeyRedaction(keyLine);
   scrollToBottom();
+}
+
+/** The 60 second wipe runs once the run is over and a key has actually been shown. */
+function startClearCountdownWhenReady() {
+  if (!runFinished || !keyRevealed || clearCountdownTimer) return;
+  print("  Click the key to copy it. Save it before the terminal clears.", "amber");
+  startClearCountdown();
 }
 
 function finishRun() {
   stopWorkers();
+  runFinished = true;
   print();
   print(
     targetCount > 1
-      ? "  SAVE THESE PRIVATE KEYS NOW. Click a key to copy it."
-      : "  SAVE YOUR PRIVATE KEY NOW. Click it to copy.",
+      ? "  YOUR PRIVATE KEYS ARE ABOVE. Each stays hidden until you click its line."
+      : "  YOUR PRIVATE KEY IS ABOVE. It stays hidden until you click that line.",
     "amber"
   );
+  print("  It exists only in this tab. Keep the tab open until you have saved it.", "amber");
+  print("  The terminal clears 60 seconds after you reveal it.", "amber");
   print("  Anyone with the private key controls that wallet.", "amber");
   print();
-  announce("Match found. The private key is on screen. Save it now.");
-  startClearCountdown();
+  announce("Match found. The private key is hidden until you reveal it. Keep this tab open.");
+  startClearCountdownWhenReady();
 }
 
 function startGrinding(pattern, position, caseSensitive, threadCount, batch, attempts) {
@@ -450,6 +481,8 @@ function startGrinding(pattern, position, caseSensitive, threadCount, batch, att
   estimatedAttempts = attempts;
   workerErrors = 0;
   grinding = true;
+  runFinished = false;
+  keyRevealed = false;
   workers = [];
   setMatrixPaused(true);
   if (stopBtn) stopBtn.hidden = false;
@@ -519,12 +552,21 @@ function requestStop() {
   );
   print();
   if (hadMatches) {
-    print("  Keys already on screen will be wiped with the terminal.", "amber");
-    startClearCountdown();
+    runFinished = true;
+    print("  The keys found so far are above. Reveal the ones you want to keep.", "amber");
+    print("  The terminal clears 60 seconds after the first reveal.", "amber");
+    startClearCountdownWhenReady();
   } else {
     promptRestart();
   }
 }
+
+// A running grind and an unsaved key exist only in this tab. Ask before either is thrown away.
+window.addEventListener("beforeunload", (event) => {
+  if (!grinding && !holdingKey) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
 
 document.addEventListener("keydown", (e) => {
   if (!grinding) return;
@@ -804,12 +846,12 @@ async function boot() {
     print("  Crypto: @noble/curves ed25519", "dim");
     print("  Network: payment check only", "dim");
     print("  Keys stay on this device", "dim");
-    print("  Key leaves the screen ~60s after a match", "dim");
+    print("  Key stays hidden until you reveal it", "dim");
   } else {
     print(`  Cores:    ${cores}`, "dim");
     print("  Crypto:   @noble/curves ed25519", "dim");
     print("  Network:  payment check only — keys stay on this device", "dim");
-    print("  Reveal:   the key leaves the screen about 60s after a match", "dim");
+    print("  Reveal:   the key stays hidden until you ask, then clears after 60s", "dim");
   }
   print();
   if (isNarrow()) {
@@ -946,7 +988,7 @@ function initSupport() {
     tipAddress.tabIndex = 0;
     if (tipCopy) {
       tipCopy.hidden = false;
-      tipCopy.addEventListener("click", () => copyPublic(siteConfig.tipAddress.trim()));
+      tipCopy.addEventListener("click", () => copyPublic(tipAddress.textContent.trim()));
     }
     if (tipNote) {
       tipNote.textContent =

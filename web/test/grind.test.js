@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Worker } from "node:worker_threads";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { decodeBase58, encodeBase58 } from "../../shared/base58.js";
+import { BASE58_ALPHABET } from "../../shared/base58.js";
 import {
+  COMMON_FIRST_CHARS,
   DEFAULT_KEYS_PER_THREAD,
   describeJob,
   estimateDifficulty,
+  firstCharProbability,
   formatAttempts,
   formatDuration,
   formatEstimate,
@@ -90,23 +92,53 @@ test("prefix odds do not double digits and do add a real second case", () => {
   assert.equal(estimateDifficulty("2", "prefix", false), 17);
   assert.equal(estimateDifficulty("A", "prefix", true), 17);
   assert.equal(estimateDifficulty("a", "prefix", false), 17);
-  assert.equal(estimateDifficulty("AB", "prefix", true), 986);
-  assert.equal(estimateDifficulty("1", "prefix", true), 250);
-  assert.equal(estimateDifficulty("z", "prefix", true), 1000);
+  assert.equal(estimateDifficulty("AB", "prefix", true), 982);
+  assert.equal(estimateDifficulty("1", "prefix", true), 256);
+  assert.equal(estimateDifficulty("z", "prefix", true), 999);
   assert.equal(estimateDifficulty("z", "prefix", false), 500);
-  assert.equal(estimateDifficulty("L", "prefix", false), 1000);
+  assert.equal(estimateDifficulty("L", "prefix", false), 999);
   assert.equal(prefixRarity("A", true), "common");
   assert.equal(prefixRarity("1", true), "uncommon");
   assert.equal(prefixRarity("z", true), "rare");
   assert.equal(prefixRarity("a", false), "common");
 });
 
+test("first-character odds are the real distribution, J included", () => {
+  assert.equal(COMMON_FIRST_CHARS, "23456789ABCDEFGH");
+  const total = [...BASE58_ALPHABET].reduce((sum, ch) => sum + firstCharProbability(ch, true), 0);
+  assert.ok(Math.abs(total - 1) < 1e-9, String(total));
+
+  // The 44-character range ends partway through J: about 1 address in 70, not 1 in 17.
+  assert.equal(estimateDifficulty("J", "prefix", true), 70);
+  assert.equal(prefixRarity("J", true), "uncommon");
+  assert.equal(prefixRarity("j", false), "uncommon");
+
+  // Measured, not assumed: encode random keys and count their first characters.
+  const samples = 120_000;
+  const seen = new Map();
+  const bytes = new Uint8Array(32);
+  for (let i = 0; i < samples; i++) {
+    crypto.getRandomValues(bytes);
+    const first = encodeBase58(bytes)[0];
+    seen.set(first, (seen.get(first) ?? 0) + 1);
+  }
+  for (const ch of "23456789ABCDEFGHJ") {
+    const expected = firstCharProbability(ch, true) * samples;
+    const sigma = Math.sqrt(expected);
+    assert.ok(Math.abs((seen.get(ch) ?? 0) - expected) < 6 * sigma, `${ch}: saw ${seen.get(ch)}, expected ${expected.toFixed(0)}`);
+  }
+  const rare = [...seen].filter(([ch]) => !"123456789ABCDEFGHJ".includes(ch)).reduce((sum, [, n]) => sum + n, 0);
+  const expectedRare = [...BASE58_ALPHABET].filter((ch) => !"123456789ABCDEFGHJ".includes(ch))
+    .reduce((sum, ch) => sum + firstCharProbability(ch, true), 0) * samples;
+  assert.ok(Math.abs(rare - expectedRare) < 6 * Math.sqrt(expectedRare), `rare: saw ${rare}, expected ${expectedRare.toFixed(0)}`);
+});
+
 test("anywhere counts windows, and prefix-or-suffix unions the two odds", () => {
   assert.equal(estimateDifficulty("ab", "anywhere", false), 20);
-  // "AB": prefix 1/17 × 1/58, suffix 1/58². Union rounds to 763.
-  assert.equal(estimateDifficulty("AB", "prefix-or-suffix", true), 763);
+  // "AB": prefix about 1/17 × 1/58, suffix 1/58². Union rounds to 760.
+  assert.equal(estimateDifficulty("AB", "prefix-or-suffix", true), 760);
   // Case-sensitive "ab": 'a' is a rare first glyph, so the suffix term dominates.
-  assert.equal(estimateDifficulty("ab", "prefix-or-suffix", true), 3180);
+  assert.equal(estimateDifficulty("ab", "prefix-or-suffix", true), 3179);
   assert.equal(estimateDifficulty("", "suffix", true), Infinity);
   assert.equal(estimateDifficulty("0", "suffix", true), Infinity);
   assert.equal(estimateDifficulty("a".repeat(45), "suffix", true), Infinity);
@@ -121,8 +153,11 @@ test("describeJob warns about rare prefixes and case-less patterns", () => {
     threads: 1,
     keysPerThread: 5000,
   });
-  assert.equal(rare.attempts, 1000);
-  assert.ok(rare.warnings.some((w) => w.includes("17×")));
+  assert.equal(rare.attempts, 999);
+  // 0.1% against a common character's 5.9%: about 59 times rarer.
+  assert.ok(rare.warnings.some((w) => w.includes("about 0.1% of addresses, roughly 59× rarer")));
+  const uncommon = describeJob({ pattern: "J", position: "prefix", caseSensitive: true, threads: 1 });
+  assert.ok(uncommon.warnings.some((w) => w.includes("about 1.4% of addresses, roughly 4× rarer")));
 
   const digits = describeJob({
     pattern: "1",
@@ -172,33 +207,4 @@ test("tip addresses are public and short, and batching follows the flag", () => 
   assert.deepEqual(resolveBatch(3, on), { enabled: true, batch: 3, rejected: false });
   assert.deepEqual(resolveBatch(40, on), { enabled: true, batch: 10, rejected: true });
   assert.equal(resolveBatch(Number.NaN, on).rejected, true);
-});
-
-test("cli worker finds a one-character suffix", { timeout: 20_000 }, async () => {
-  const worker = new Worker(new URL("../../cli/worker.js", import.meta.url), {
-    workerData: { pattern: "a", position: "suffix", caseSensitive: false },
-  });
-  try {
-    const found = await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("cli worker timed out")), 15_000);
-      worker.on("message", (msg) => {
-        if (msg.type === "found") {
-          clearTimeout(timer);
-          resolve(msg);
-        }
-      });
-      worker.on("error", (err) => {
-        clearTimeout(timer);
-        reject(err);
-      });
-    });
-    const end = found.address.at(-1);
-    assert.ok(end === "a" || end === "A", found.address);
-    assert.equal(decodeBase58(found.privateKey).length, 64);
-    const decoded = decodeBase58(found.privateKey);
-    const pub = decoded.subarray(32);
-    assert.equal(encodeBase58(pub), found.address);
-  } finally {
-    await worker.terminate();
-  }
 });

@@ -30,7 +30,30 @@
   <meta name="twitter:image" content="https://vanitygrinder.com/og.png" />
   <meta name="twitter:image:alt" content="VanityGrinder, a client-side Solana vanity address generator" />
 
-  <script type="application/ld+json" src="/schema.json"></script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "VanityGrinder",
+    "url": "https://vanitygrinder.com/",
+    "applicationCategory": "UtilitiesApplication",
+    "operatingSystem": "Any",
+    "browserRequirements": "Requires JavaScript, Web Workers, and crypto.getRandomValues",
+    "isAccessibleForFree": false,
+    "offers": {
+      "@type": "Offer",
+      "price": "1",
+      "priceCurrency": "USD",
+      "description": "$1 in USDC per grind, paid from your wallet"
+    },
+    "description": "Client-side Solana vanity address generator. Keypairs are created locally in Web Workers and are never uploaded. $1 in USDC per grind, paid from your wallet.",
+    "publisher": {
+      "@type": "Organization",
+      "name": "DoradoDevs",
+      "url": "https://github.com/DoradoDevs/solana-vanity-address-generator"
+    }
+  }
+  </script>
 
   <link rel="stylesheet" href="/src/style.css" />
 </head>
@@ -88,7 +111,7 @@
 
     <section id="terminal-section" aria-labelledby="generator-title">
       <h2 id="generator-title" class="sr-only">Generator</h2>
-      <div id="terminal-window">
+      <div id="terminal-window" translate="no" class="notranslate">
         <div class="window-bar">
           <div class="window-dots" aria-hidden="true">
             <span class="dot red"></span>
@@ -129,11 +152,11 @@
       </article>
       <article class="glass-card">
         <h3>Payment only</h3>
-        <p>Content-Security-Policy allows connections only to this site's <span class="mono">/.netlify/functions/</span> paths, for the $1 USDC payment. No web fonts, cookies, or analytics are loaded. The grind worker has no network access and never receives the RPC URL.</p>
+        <p>Content-Security-Policy lets this page connect only back to this site, for the $1 USDC payment. No web fonts, cookies, or analytics are loaded. The grind worker is served with a policy that allows no connections at all, and it never receives the RPC URL.</p>
       </article>
       <article class="glass-card">
         <h3>Memory wiping</h3>
-        <p>Seed bytes are cleared after each attempt. The key on screen is removed when the terminal clears, about 60 seconds after a match, and redacts itself after two minutes if it is still showing.</p>
+        <p>Seed bytes are cleared after each attempt. A matched key stays hidden until you reveal it. The terminal clears about 60 seconds after that, and a key line that is still showing redacts itself after two minutes.</p>
       </article>
       <article class="glass-card">
         <h3>Clipboard hygiene</h3>
@@ -150,7 +173,7 @@
       <p class="section-sub">A normal keypair, kept only if the public address contains the text you asked for.</p>
       <div class="prose">
         <p>A Solana address is the Base58 spelling of an ed25519 public key. Vanity grinding creates ordinary keypairs with the browser's cryptographic random source and discards the ones that miss. The pattern is a filter on the address you can already see. It does not weaken the private key, and it does not require a server to "reserve" anything.</p>
-        <p>You choose where the text sits. A <strong>suffix</strong> (the end) is the usual choice. <strong>Anywhere</strong> is faster because the text can land in many slots. A <strong>prefix</strong> is harsher: most addresses are 44 characters and start with <span class="mono">2–9</span>, <span class="mono">A–H</span>, or <span class="mono">J</span>. A prefix like <span class="mono">sol</span> starts with a rare letter, so <span class="mono">…sol</span> finishes long before <span class="mono">sol…</span>.</p>
+        <p>You choose where the text sits. A <strong>suffix</strong> (the end) is the usual choice. <strong>Anywhere</strong> is faster because the text can land in many slots. A <strong>prefix</strong> is harsher: most addresses are 44 characters and start with <span class="mono">2–9</span>, <span class="mono">A–H</span>, or <span class="mono">J</span>. A prefix like <span class="mono">pump</span> starts with a rare letter, so <span class="mono">…pump</span> finishes long before <span class="mono">pump…</span>.</p>
         <p>Base58 leaves out <span class="mono">0</span>, <span class="mono">O</span>, <span class="mono">I</span>, and <span class="mono">l</span> so those glyphs cannot be confused. Each extra case-sensitive character multiplies the work by about 58. A letter you allow in either case multiplies it by about 29 instead. Digits have no second case, so "ignore case" does not speed them up.</p>
       </div>
     </section>
@@ -196,7 +219,7 @@
         <div class="estimator-grid">
           <label class="field">
             <span>Pattern</span>
-            <input id="est-pattern" type="text" maxlength="44" placeholder="e.g. sol" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+            <input id="est-pattern" type="text" maxlength="44" placeholder="e.g. pump" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
           </label>
           <label class="field">
             <span>Length <strong id="est-length-val">4</strong></span>
@@ -230,7 +253,7 @@
 
     <section id="difficulty">
       <h2>Reference table</h2>
-      <p class="section-sub">Suffix matches at 100,000 keys/second. "Letter, either case" is a pattern like <span class="mono">sol</span>, not a digit.</p>
+      <p class="section-sub">Suffix matches at 100,000 keys/second. "Letter, either case" is a pattern like <span class="mono">pump</span>, not a digit.</p>
       <div class="table-wrap glass-card table-card">
         <table>
           <thead>
@@ -261,11 +284,11 @@
       <div class="faq-list">
         <details class="faq">
           <summary>Do private keys leave the browser?</summary>
-          <p>No. Workers generate keypairs on your device and post the match back to this page. Keys are generated on your device; the only network call is payment verification. That call goes to this site's Netlify Function and sends the payment reference, not the pattern or the private key. The grind worker itself does not open a connection.</p>
+          <p>No. Workers generate keypairs on your device and post the match back to this page. Keys are generated on your device; the only network call is payment verification. Those calls go to this site's own functions and carry your paying wallet's public address and a one-time code for the payment, never the pattern or the private key. The grind worker cannot open a connection: the browser enforces that.</p>
         </details>
         <details class="faq">
           <summary>What should I save, and when does it disappear?</summary>
-          <p>Save the address and the private key before you close the tab. The private key is 64 bytes — the 32-byte seed followed by the public key — written in Base58, which is the form Solana wallets import. About 60 seconds after the run finishes, the terminal wipes itself. A key line that is still visible redacts after two minutes. If you copied the key, the page tries to clear the clipboard about 60 seconds later when the browser allows a clipboard read.</p>
+          <p>Save the address and the private key before you close the tab. The private key is 64 bytes — the 32-byte seed followed by the public key — written in Base58, which is the form Solana wallets import. The key stays hidden until you click to reveal it, so a grind that finishes while you are away waits for you. About 60 seconds after you reveal it, the terminal wipes itself. A key line that is still visible redacts after two minutes. If you copied the key, the page tries to clear the clipboard about 60 seconds later when the browser allows a clipboard read.</p>
         </details>
         <details class="faq">
           <summary>Is a vanity key weaker than a normal Solana key?</summary>
@@ -273,7 +296,7 @@
         </details>
         <details class="faq">
           <summary>Why can a prefix take so much longer?</summary>
-          <p>About 94% of Solana addresses are 44 characters, and those start with <span class="mono">2–9</span>, <span class="mono">A–H</span>, or <span class="mono">J</span>. A first character outside that set is roughly 17× rarer than a common one. <span class="mono">1</span> is uncommon. Lowercase and letters after J are rare. Suffix and anywhere avoid that bias. The estimator states which case you are in before you start.</p>
+          <p>About 94% of Solana addresses are 44 characters, and those start with <span class="mono">2–9</span>, <span class="mono">A–H</span>, or <span class="mono">J</span>. A first character outside that set is roughly 59× rarer than a common one. <span class="mono">1</span> and <span class="mono">J</span> are uncommon. Lowercase and letters after J are rare. Suffix and anywhere avoid that bias. The estimator states which case you are in before you start.</p>
         </details>
         <details class="faq">
           <summary>Which characters are allowed?</summary>
@@ -293,7 +316,7 @@
         </details>
         <details class="faq">
           <summary>How do I know this deploy was not tampered with?</summary>
-          <p>Use <span class="mono">vanitygrinder.com</span>, or a copy you built yourself from the public source. After load, open DevTools and confirm <span class="mono">connect-src</span> lists only <span class="mono">/.netlify/functions/</span> paths. During a grind, the network panel should not add requests. A lookalike can remove those rules. This page will never ask you to paste a private key back in.</p>
+          <p>Use <span class="mono">vanitygrinder.com</span>, or a copy you built yourself from the public source. After load, open DevTools and confirm <span class="mono">connect-src</span> is <span class="mono">'self'</span>: the page can connect only back to this site. During a grind, the network panel should not add requests. A lookalike can remove those rules. This page will never ask you to paste a private key back in.</p>
         </details>
       </div>
     </section>
