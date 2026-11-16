@@ -1,6 +1,6 @@
 # VanityGrinder knowledge base
 
-Last verified: 2026-11-16 against `14b5aca` (branch `audit/2026-11-16`; payment, header and key fixes in `07131e5`).
+Last verified: 2026-11-16 against `edb18ad` (branch `audit/2026-11-16`; payment, header and key fixes in `07131e5`, payee pin and pre-sign check in `edb18ad`).
 
 The code wins over this page. If they disagree, fix the page.
 
