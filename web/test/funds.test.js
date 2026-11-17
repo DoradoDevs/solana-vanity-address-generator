@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PublicKey } from "@solana/web3.js";
-import { ACCOUNT_SIZE } from "@solana/spl-token";
-import { USDC_MINT } from "../netlify/functions/lib/constants.js";
+import { ACCOUNT_SIZE, USDC_MINT } from "../netlify/functions/lib/constants.js";
 import { assessFunds, readTokenAmount } from "../netlify/functions/lib/funds.js";
 import { NETWORK_FEE_NOTE, PAY_ERRORS, classifyWalletError } from "../../shared/pay-copy.js";
 

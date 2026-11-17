@@ -8,12 +8,12 @@ import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { BlobsServer } from "@netlify/blobs/server";
 import { PublicKey } from "@solana/web3.js";
-import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { encodeBase58 } from "../../../shared/base58.js";
 import { TOKEN_PROGRAM_ID, USDC_MINT } from "../../netlify/functions/lib/constants.js";
+import { associatedTokenAddress } from "../../netlify/functions/lib/tx.js";
 
 export function ataOf(owner) {
-  return getAssociatedTokenAddressSync(new PublicKey(USDC_MINT), new PublicKey(owner), true).toBase58();
+  return associatedTokenAddress(new PublicKey(USDC_MINT), new PublicKey(owner)).toBase58();
 }
 
 function tokenAccountData(owner, amount) {

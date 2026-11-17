@@ -18,19 +18,20 @@ import {
   VersionedTransaction,
 } from "@solana/web3.js";
 import {
-  ASSOCIATED_TOKEN_PROGRAM_ID,
   AuthorityType,
-  TOKEN_PROGRAM_ID,
   createApproveInstruction,
-  createAssociatedTokenAccountIdempotentInstruction,
   createSetAuthorityInstruction,
-  createTransferCheckedInstruction,
   createTransferInstruction,
-  getAssociatedTokenAddressSync,
-} from "@solana/spl-token";
+} from "./helpers/token-program.js";
+import { ASSOCIATED_ACCOUNTS } from "./helpers/spl-token-vectors.js";
 import { referenceForClaim } from "../netlify/functions/lib/claim.js";
-import { buildUnsignedTransaction } from "../netlify/functions/lib/tx.js";
-import { PAY_TO, USDC_MINT } from "../../shared/payment.js";
+import {
+  associatedTokenAddress,
+  buildUnsignedTransaction,
+  createAssociatedTokenAccountIdempotentInstruction,
+  createTransferCheckedInstruction,
+} from "../netlify/functions/lib/tx.js";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, PAY_TO, TOKEN_PROGRAM_ID, USDC_MINT } from "../../shared/payment.js";
 import { checkPreparedTransfer, isOnCurve, referenceOf, usdcAccountOf } from "../src/transfer-check.js";
 import { PAYER, newClaim } from "./helpers/chain.js";
 
@@ -39,11 +40,10 @@ const ATTACKER = Keypair.generate().publicKey.toBase58();
 const OTHER_MINT = "So11111111111111111111111111111111111111112";
 const MAX_U64 = 18_446_744_073_709_551_615n;
 const SYSTEM = SystemProgram.programId.toBase58();
-const TOKEN = TOKEN_PROGRAM_ID.toBase58();
-const ATA_PROGRAM = ASSOCIATED_TOKEN_PROGRAM_ID.toBase58();
+const TOKEN = TOKEN_PROGRAM_ID;
+const ATA_PROGRAM = ASSOCIATED_TOKEN_PROGRAM_ID;
 
-const ata = (owner, mint = USDC_MINT) =>
-  getAssociatedTokenAddressSync(new PublicKey(mint), new PublicKey(owner), true);
+const ata = (owner, mint = USDC_MINT) => associatedTokenAddress(new PublicKey(mint), new PublicKey(owner));
 
 const readOnly = (address) => ({ pubkey: new PublicKey(address), isSigner: false, isWritable: false });
 
@@ -147,6 +147,10 @@ test("the curve test and the account derivation agree with @solana/web3.js and s
   const owners = [PAY_TO, PAYER, ATTACKER];
   for (let i = 0; i < 25; i++) owners.push(new PublicKey(randomBytes(32)).toBase58());
   for (const owner of owners) assert.equal(await usdcAccountOf(owner), ata(owner).toBase58(), owner);
+  // And spl-token's own answers, recorded before it was removed, owners off the curve among them.
+  const recorded = ASSOCIATED_ACCOUNTS.filter(({ mint }) => mint === USDC_MINT);
+  assert.ok(recorded.some(({ owner }) => !PublicKey.isOnCurve(new PublicKey(owner).toBytes())));
+  for (const { owner, address } of recorded) assert.equal(await usdcAccountOf(owner), address, owner);
 
   const { claim } = newClaim();
   assert.equal(await referenceOf(claim), referenceForClaim(claim));

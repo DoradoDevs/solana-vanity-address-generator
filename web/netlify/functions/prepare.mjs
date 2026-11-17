@@ -1,13 +1,12 @@
 import { PublicKey } from "@solana/web3.js";
-import { ACCOUNT_SIZE, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { PAY_ERRORS } from "../../../shared/pay-copy.js";
 import { isAddress } from "./lib/address.js";
 import { referenceForClaim } from "./lib/claim.js";
-import { payToAddress, solanaRpcUrl, USDC_MINT } from "./lib/constants.js";
+import { ACCOUNT_SIZE, payToAddress, solanaRpcUrl, USDC_MINT } from "./lib/constants.js";
 import { assessFunds, readTokenAmount } from "./lib/funds.js";
 import { describeFailure, json, postOnly, readJson } from "./lib/http.js";
 import { createRpc } from "./lib/rpc.js";
-import { buildUnsignedTransaction } from "./lib/tx.js";
+import { associatedTokenAddress, buildUnsignedTransaction } from "./lib/tx.js";
 
 // Each call costs two RPC requests, so the edge limits it per visitor.
 // A person pays once per grind.
@@ -43,8 +42,8 @@ export default async function prepare(request) {
   if (payer === payTo) return json({ error: PAY_ERRORS.payee, reason: "payee" }, 400);
 
   const mint = new PublicKey(USDC_MINT);
-  const source = getAssociatedTokenAddressSync(mint, new PublicKey(payer), true);
-  const destination = getAssociatedTokenAddressSync(mint, new PublicKey(payTo), true);
+  const source = associatedTokenAddress(mint, new PublicKey(payer));
+  const destination = associatedTokenAddress(mint, new PublicKey(payTo));
   const rpc = createRpc(rpcUrl);
 
   let payerAccount;

@@ -1,9 +1,19 @@
 import { PAY_TO, PRICE_BASE_UNITS } from "../../../../shared/payment.js";
 
 // The payee, the mint and the price are pinned in shared/payment.js, which the page uses too.
-export { PAY_TO, TOKEN_PROGRAM_ID, USDC_DECIMALS, USDC_MINT } from "../../../../shared/payment.js";
+export {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  PAY_TO,
+  SYSTEM_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+  USDC_DECIMALS,
+  USDC_MINT,
+} from "../../../../shared/payment.js";
 
 export const USDC_BASE_UNITS = PRICE_BASE_UNITS;
+
+/** Bytes in an SPL Token account; the payee's account costs the rent for this much. */
+export const ACCOUNT_SIZE = 165;
 
 export const TOKEN_TTL_MS = 10 * 60 * 1000;
 

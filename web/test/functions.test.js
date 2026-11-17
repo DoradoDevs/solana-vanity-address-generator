@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 import { Transaction } from "@solana/web3.js";
-import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID as SPL_TOKEN_PROGRAM } from "@solana/spl-token";
+import { ASSOCIATED_TOKEN_PROGRAM_ID, TOKEN_PROGRAM_ID } from "../../shared/payment.js";
 import consume, { config as consumeConfig } from "../netlify/functions/consume.mjs";
 import prepare, { config as prepareConfig } from "../netlify/functions/prepare.mjs";
 import quote, { config as quoteConfig } from "../netlify/functions/quote.mjs";
@@ -68,7 +68,7 @@ function assertNoRpcUrl(...texts) {
 function land(transactionBase64, status = "finalized") {
   const tx = Transaction.from(Buffer.from(transactionBase64, "base64"));
   const keys = tx.compileMessage().accountKeys.map((key) => key.toBase58());
-  const transfer = tx.instructions.find((ix) => ix.programId.equals(SPL_TOKEN_PROGRAM));
+  const transfer = tx.instructions.find((ix) => ix.programId.toBase58() === TOKEN_PROGRAM_ID);
   const amount = Buffer.from(transfer.data).readBigUInt64LE(1);
   const [source, , destination, payer] = transfer.keys.map((key) => key.pubkey.toBase58());
   const payee = tx.instructions[0].keys[2].pubkey.toBase58();
@@ -148,9 +148,9 @@ test("prepare builds a 1.00 USDC transfer to the payee that names the claim's re
   assert.equal(tx.signatures.every((s) => s.signature === null), true);
   assert.equal(tx.instructions.length, 2);
   const [createAta, transfer] = tx.instructions;
-  assert.equal(createAta.programId.toBase58(), ASSOCIATED_TOKEN_PROGRAM_ID.toBase58());
+  assert.equal(createAta.programId.toBase58(), ASSOCIATED_TOKEN_PROGRAM_ID);
   assert.equal(Buffer.from(createAta.data)[0], 1); // CreateIdempotent
-  assert.equal(transfer.programId.toBase58(), SPL_TOKEN_PROGRAM.toBase58());
+  assert.equal(transfer.programId.toBase58(), TOKEN_PROGRAM_ID);
   const data = Buffer.from(transfer.data);
   assert.equal(data[0], 12); // TransferChecked
   assert.equal(data.readBigUInt64LE(1), 1_000_000n);
