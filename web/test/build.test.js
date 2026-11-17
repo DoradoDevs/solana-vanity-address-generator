@@ -104,7 +104,8 @@ test("the built page talks only to /api/ on its own origin and keeps nothing but
   // Every fetch in the bundle starts with a literal /api/ path: none takes a computed URL.
   const fetches = [...page.matchAll(/fetch\((["`])([^"`]*)/g)].map((match) => match[2]);
   assert.equal(fetches.length, (page.match(/fetch\(/g) || []).length);
-  assert.equal(fetches.length, 2);
+  // One: the page calls its own functions through one helper. The price and payee are in the bundle, not fetched.
+  assert.equal(fetches.length, 1);
   for (const target of fetches) assert.match(target, /^\/api\//);
 
   for (const api of ["XMLHttpRequest", "WebSocket", "EventSource", "sendBeacon", "sessionStorage", "indexedDB", "document.cookie", "eval("]) {

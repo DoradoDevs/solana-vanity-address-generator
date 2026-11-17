@@ -129,7 +129,9 @@ test("the client sources never see a server secret, a third-party host, or an HT
   assert.doesNotMatch(flow, /\bfetch\s*\(|document\.|privateKey/);
   assert.doesNotMatch(pay, /privateKey|https?:\/\//);
   const fetches = [...pay.matchAll(/fetch\(([^,)]+)/g)].map((match) => match[1].trim());
-  assert.deepEqual(fetches, ["`/api/${name}`", '"/api/quote"']);
+  // One fetch, to our own functions. Nothing the server returns replaces the pinned payee or tip address.
+  assert.deepEqual(fetches, ["`/api/${name}`"]);
+  assert.doesNotMatch(pay, /tip-address|payTo/);
   assert.doesNotMatch(pay, /@solana\/web3\.js|@solana\/spl-token|netlify\/functions/);
 
   assert.match(html, /Keys are generated on your device/);

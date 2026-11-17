@@ -95,13 +95,19 @@ function reader(bytes) {
     return out;
   };
   const u8 = () => take(1)[0];
-  // compact-u16: up to three bytes, seven bits each, low first.
+  // compact-u16: up to three bytes, seven bits each, low first. As in the
+  // runtime's short_vec, each value has one spelling: no zero byte after the
+  // first, and nothing above u16.
   const length = () => {
     let value = 0;
     for (let i = 0; i < 3; i++) {
       const byte = u8();
+      if (i > 0 && byte === 0) throw new Error("non-canonical length");
       value |= (byte & 0x7f) << (7 * i);
-      if (!(byte & 0x80)) return value;
+      if (!(byte & 0x80)) {
+        if (value > 0xffff) throw new Error("length out of range");
+        return value;
+      }
     }
     throw new Error("bad length");
   };

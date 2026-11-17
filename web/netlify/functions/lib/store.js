@@ -1,10 +1,19 @@
-import { getStore } from "@netlify/blobs";
+import { getStore as netlifyGetStore } from "@netlify/blobs";
 
 /**
  * The payment ledger is append-only: one record per spent transaction,
- * written once and never changed. `create` is the only write, and it either
- * creates the key or reports that it already existed. There is no
- * read-then-write anywhere, so two requests cannot both win.
+ * written once and never changed. `create` is the only write. It asks the
+ * store to create the key only if it is absent, and reports whether it did.
+ * Whether two concurrent requests can both win therefore depends on the
+ * store deciding that atomically:
+ *
+ * - memoryStore below decides it in one synchronous step.
+ * - Hosted Netlify Blobs documents `onlyIfNew` as an atomic, conditional
+ *   write (see kb/README.md, "consume"). The suite cannot reach the hosted
+ *   store; test/ledger.test.js proves the code against an atomic stand-in.
+ * - Netlify's local BlobsServer, which `netlify dev` uses, is NOT atomic: it
+ *   checks for the key and writes it across awaits, so concurrent spends
+ *   there can all succeed. Never use it to judge single-spend.
  */
 
 /** In-process ledger with the same contract. Used by the tests. */
@@ -24,14 +33,20 @@ export function memoryStore() {
 
 /**
  * Netlify Blobs. `onlyIfNew` makes the write conditional on the key being
- * absent, decided by the store itself. Reads are strongly consistent so a
- * spent payment is reported as spent straight away; correctness does not
- * depend on that, because the conditional write is what decides.
+ * absent, decided by the store itself.
+ *
+ * Reads are strongly consistent. The conditional write decides who wins, but
+ * the winner's retry is told it won by reading the record back (consumeUnlock),
+ * and verify reports a spent payment by reading it. A read served from an
+ * edge cache could miss a record that exists and turn the winner's retry
+ * into "reused".
  *
  * Throws when Blobs is not configured for this environment. There is no
  * fallback: a ledger that forgets is worse than an error.
+ *
+ * @param {{ getStore?: typeof netlifyGetStore }} [deps] for the contract test only
  */
-export function blobStore() {
+export function blobStore({ getStore = netlifyGetStore } = {}) {
   const store = getStore({ name: "grind-payments", consistency: "strong" });
   return {
     async get(key) {

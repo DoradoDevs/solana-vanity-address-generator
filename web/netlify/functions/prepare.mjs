@@ -39,6 +39,8 @@ export default async function prepare(request) {
   if (!isAddress(payer) || !reference) {
     return json({ error: "The payment request was not valid. Reload the page, then pay.", reason: "invalid" }, 400);
   }
+  // A transfer from the payee to itself moves nothing, so verify could never accept it.
+  if (payer === payTo) return json({ error: PAY_ERRORS.payee, reason: "payee" }, 400);
 
   const mint = new PublicKey(USDC_MINT);
   const source = getAssociatedTokenAddressSync(mint, new PublicKey(payer), true);

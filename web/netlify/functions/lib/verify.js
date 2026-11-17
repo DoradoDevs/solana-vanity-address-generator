@@ -9,36 +9,93 @@ const fail = (status, reason) => ({ ok: false, status, reason });
 
 /** Nothing could be concluded. The caller keeps its claim and asks again; nothing is granted. */
 const CANNOT_TELL = fail(503, "unavailable");
+const PENDING = fail(202, "pending");
+// Not an error: a payment sent a moment ago is simply not visible yet. 202, like "pending",
+// so a browser waiting on its own payment does not fill its console with failed requests.
+const NOT_FOUND = fail(202, "not_found");
+const REUSED = fail(409, "reused");
+
+/** How many listed transactions one verify call reads when it has to search by reference. */
+export const REFERENCE_READS = 4;
+
+const notFinal = (status) => status.confirmationStatus === "processed" || status.confirmationStatus === "confirmed";
 
 /**
- * The transaction to judge, found from the page's signature or from the
- * reference, or the answer to give when there is none to judge yet.
- *
- * The signature is the one the wallet returned to the page. It is only a
- * pointer: whatever it points at must still name the claim's reference, or
- * it is ignored. With it, transactions that third parties add naming the
- * reference are never looked at. Without it (the wallet failed after
- * sending, or the page was closed), the payment is the oldest successful
- * transaction naming the reference, because the reference is unknown to
- * everyone else until that transaction is broadcast.
+ * The transaction the page pointed at: the signature its wallet returned.
+ * It is only a pointer. Whatever it points at must still name the claim's
+ * reference, or it is ignored (null) and the claim is looked up by reference.
+ * When it does name the reference, it is the claim's own transaction, and
+ * once read at `finalized` it is the one thing verify gives a verdict on.
  */
-async function findPayment(rpc, reference, signature) {
-  if (signature !== undefined) {
-    const [status] = await rpc.getSignatureStatuses([signature]);
-    // Unknown to the node: look the claim up by reference instead, in case
-    // what landed is not what the wallet reported.
-    if (status) return { row: { signature, ...status }, pointed: true };
+async function judgePointed({ rpc, store, reference, signature, payTo }) {
+  const [status] = await rpc.getSignatureStatuses([signature]);
+  // Unknown to the node: look the claim up by reference, in case what landed is not what the wallet reported.
+  if (!status) return null;
+  if (notFinal(status)) return PENDING;
+  // Asked for at "finalized": null until the transaction can no longer be rolled back.
+  const tx = await rpc.getTransaction(signature);
+  if (!tx) return PENDING;
+  const assessment = assessTransaction(tx, { payTo, reference, signature });
+  if (assessment.ok) return (await store.get(spentKey(signature))) ? REUSED : { paid: signature };
+  if (assessment.reason === "unrelated") return null;
+  if (assessment.reason === "malformed") return CANNOT_TELL;
+  // failed, wrong_mint, wrong_amount: the claim's own transaction did not pay.
+  return fail(400, assessment.reason);
+}
+
+/**
+ * Search the transactions naming the reference for one that pays. The
+ * reference is public once the payment is broadcast, so anyone can add
+ * transactions naming it. None of them can redeem anything (only the claim
+ * holder gets a token, and a payment is spent once by its signature), so any
+ * transaction that pays is the payment, and nothing else found here is a
+ * verdict: what does not pay may not even be the claim's own.
+ *
+ * Successful rows are read oldest first, because the claim's own payment is
+ * broadcast before anyone else can know the reference. At most
+ * REFERENCE_READS are read per call, which bounds what one request costs.
+ */
+async function searchReference({ rpc, store, reference, payTo }) {
+  const rows = await rpc.getSignaturesForAddress(reference);
+  if (rows.length === 0) return NOT_FOUND;
+
+  let pending = false;
+  let unread = false;
+  let unreadable = false;
+  let spent = false;
+  let reads = 0;
+  for (const row of [...rows].reverse()) {
+    if (row.err !== null) continue;
+    if (notFinal(row)) {
+      pending = true;
+      continue;
+    }
+    if (reads === REFERENCE_READS) {
+      unread = true;
+      break;
+    }
+    reads += 1;
+    const tx = await rpc.getTransaction(row.signature);
+    if (!tx) {
+      pending = true;
+      continue;
+    }
+    const assessment = assessTransaction(tx, { payTo, reference, signature: row.signature });
+    if (assessment.ok) {
+      if (!(await store.get(spentKey(row.signature)))) return { paid: row.signature };
+      spent = true;
+    } else if (assessment.reason === "malformed" || assessment.reason === "unrelated") {
+      // The node listed a transaction under the reference that does not name it, or served it broken.
+      unreadable = true;
+    }
   }
 
-  const rows = await rpc.getSignaturesForAddress(reference);
-  // Not an error: a payment sent a moment ago is simply not visible yet. 202, like "pending",
-  // so a browser waiting on its own payment does not fill its console with failed requests.
-  if (rows.length === 0) return { answer: fail(202, "not_found") };
-  // A full page means older transactions exist that were not returned, so the oldest is unknown.
-  if (rows.length >= SIGNATURE_LIMIT) return { answer: CANNOT_TELL };
-  const succeeded = rows.filter((row) => row.err === null);
-  if (succeeded.length === 0) return { answer: fail(400, "failed") };
-  return { row: succeeded.at(-1), pointed: false };
+  if (pending) return PENDING;
+  // A full page means older transactions exist that were not returned.
+  if (unread || unreadable || rows.length >= SIGNATURE_LIMIT) return CANNOT_TELL;
+  if (spent) return REUSED;
+  // Nothing that names the reference pays. The page's give-up clock decides when to stop looking.
+  return NOT_FOUND;
 }
 
 /**
@@ -49,9 +106,12 @@ async function findPayment(rpc, reference, signature) {
  * The payment itself is read from the finalized transaction: it succeeded,
  * it names the reference, and the payee received exactly 1.00 USDC.
  *
- * A 400 is a verdict about the claim's own transaction, and the page gives
- * the attempt up on it. Anything short of that (an odd answer from the node,
- * a reference too crowded to read) is a 503 and decides nothing.
+ * A 400 is only ever a verdict on the transaction the page pointed at, read
+ * at `finalized` and naming the claim's reference: its own. The page gives
+ * the attempt up on it. The search by reference never ends in a 400, because
+ * a transaction found that way may be someone else's. Anything short of a
+ * verdict (an odd answer from the node, a reference too crowded to read) is
+ * a 202 or a 503 and decides nothing.
  *
  * This function writes nothing. A payment is spent in `consumeUnlock`, keyed
  * by the transaction signature, so one transaction unlocks one grind no
@@ -63,37 +123,18 @@ export async function verifyPayment({ claim, signature, rpc, store, payTo, secre
   if (signature !== undefined && !isSignature(signature)) return fail(400, "invalid");
   if (!isAddress(payTo) || !secret) return fail(500, "config");
 
-  const { row, pointed, answer } = await findPayment(rpc, reference, signature);
-  if (answer) return answer;
-  if (row.confirmationStatus === "processed" || row.confirmationStatus === "confirmed") {
-    return fail(202, "pending");
-  }
-
-  // Asked for at "finalized": null until the transaction can no longer be rolled back.
-  const tx = await rpc.getTransaction(row.signature);
-  if (!tx) return fail(202, "pending");
-
-  // A failure is read from the transaction as well, so it is only reported for this claim's own.
-  const assessment = assessTransaction(tx, { payTo, reference, signature: row.signature });
-  if (!assessment.ok) {
-    // The page pointed at a transaction that is not this claim's: judge the claim without it.
-    if (assessment.reason === "unrelated" && pointed) {
-      return verifyPayment({ claim, rpc, store, payTo, secret, now });
-    }
-    if (assessment.reason === "malformed" || assessment.reason === "unrelated") return CANNOT_TELL;
-    return fail(400, assessment.reason);
-  }
-
-  // Checked only once the transaction is known to be this claim's own payment.
-  if (await store.get(spentKey(row.signature))) return fail(409, "reused");
-
-  return { ok: true, status: 200, ...signUnlockToken({ signature: row.signature, secret, now }) };
+  const lookup = { rpc, store, reference, payTo };
+  const found =
+    (signature !== undefined ? await judgePointed({ ...lookup, signature }) : null) ?? (await searchReference(lookup));
+  if (!found.paid) return found;
+  return { ok: true, status: 200, ...signUnlockToken({ signature: found.paid, secret, now }) };
 }
 
 /**
  * Spend the payment a token points at. The single conditional write is the
  * whole decision: the first request to create the record wins, and every
- * other token for that transaction is refused from then on.
+ * other token for that transaction is refused from then on. That holds as
+ * long as the store makes the write atomically (see store.js).
  *
  * The token that won gets the same answer every time it is presented, before
  * or after it expires, so a page whose response was lost can ask again

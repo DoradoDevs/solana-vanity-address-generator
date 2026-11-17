@@ -16,7 +16,7 @@ test("funds check requires 1.00 USDC and SOL for the fee or the payee account's 
     { ok: true, lamportsRequired: 5_000n + BigInt(rent) }
   );
   assert.equal(
-    assessFunds({ solLamports: 5_000, usdcBaseUnits: 1_000_000n, destinationExists: true, rentLamports: 0 }).ok,
+    assessFunds({ solLamports: 5_000, usdcBaseUnits: 1_000_000n, destinationExists: true, rentLamports: rent }).ok,
     true
   );
   assert.equal(
@@ -24,7 +24,7 @@ test("funds check requires 1.00 USDC and SOL for the fee or the payee account's 
     "insufficient_usdc"
   );
   assert.equal(
-    assessFunds({ solLamports: 4_999, usdcBaseUnits: 1_000_000n, destinationExists: true, rentLamports: 0 }).reason,
+    assessFunds({ solLamports: 4_999, usdcBaseUnits: 1_000_000n, destinationExists: true, rentLamports: rent }).reason,
     "insufficient_sol"
   );
   assert.equal(
@@ -67,5 +67,18 @@ test("wallet errors map to friendly messages that mention the network fee", () =
     "insufficient_sol"
   );
   assert.equal(classifyWalletError(new Error("Unexpected error")), null);
+  // Refused at preflight, so never broadcast: the customer may pay again at once.
+  assert.equal(classifyWalletError(new Error("Transaction simulation failed: Blockhash not found")), "not_sent");
+  assert.equal(classifyWalletError({ code: -32002, message: "Blockhash not found" }), "not_sent");
+  assert.equal(
+    classifyWalletError(new Error("Transaction simulation failed: Error processing Instruction 1: invalid account data for instruction")),
+    "not_sent"
+  );
+  // Sent, then not seen in time: it may still land, so it is not "not sent".
+  assert.equal(
+    classifyWalletError(new Error("Transaction was not confirmed in 30.00 seconds. It is unknown if it succeeded or failed.")),
+    null
+  );
+  assert.equal(classifyWalletError(new Error("Signature 5x has expired: block height exceeded.")), null);
   assert.match(PAY_ERRORS.no_wallet, /Phantom, Solflare, or Backpack/);
 });

@@ -54,7 +54,7 @@ A grind costs $1 in USDC per grind, paid from your wallet. To exercise that loca
 npx netlify dev
 ```
 
-That serves the app and the payment functions (`/api/quote`, `/api/prepare`, `/api/verify`, `/api/consume`) together on port 8888, with a local stand-in for Netlify Blobs. `npm run dev` by itself does not start those functions, so the quote and the payment check fail. There is no development bypass of the payment. One payment unlocks one grind, and only after the server has seen the finalized 1.00 USDC transfer. A real `SOLANA_RPC_URL` means real mainnet: paying there spends real USDC.
+That serves the app and the payment functions (`/api/quote`, `/api/prepare`, `/api/verify`, `/api/consume`) together on port 8888, with a local stand-in for Netlify Blobs (which, unlike hosted Blobs, does not make conditional writes atomically). `npm run dev` by itself does not start those functions, so payment fails. There is no development bypass of the payment. One payment unlocks one grind, and only after the server has seen the finalized 1.00 USDC transfer. A real `SOLANA_RPC_URL` means real mainnet: paying there spends real USDC.
 
 The terminal asks for the pattern first, measures your device for a couple of seconds, then says "Pay $1 to start grinding" and waits for the wallet payment. Vite bundles the worker into the production build and writes `dist/_headers`, the response headers Netlify serves.
 

@@ -10,9 +10,11 @@
 [build.environment]
   NODE_VERSION = "22"
   # Build-time only. Functions never see variables set in this file, so no
-  # payment setting belongs here: the payee is DEFAULT_PAY_TO in
-  # web/netlify/functions/lib/constants.js unless PAY_TO_ADDRESS is set in the
-  # Netlify UI, and SOLANA_RPC_URL and UNLOCK_SECRET exist only in the UI.
+  # payment setting belongs here. The payee is PAY_TO in shared/payment.js,
+  # compiled into the page and the functions alike; there is no override.
+  # PAY_TO_ADDRESS in the Netlify UI may only be unset or exactly that
+  # address: any other value makes quote, prepare and verify answer 503.
+  # SOLANA_RPC_URL and UNLOCK_SECRET exist only in the UI.
 
 [functions]
   directory = "netlify/functions"

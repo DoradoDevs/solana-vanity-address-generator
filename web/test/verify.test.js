@@ -199,11 +199,12 @@ test("tokens issued in the same millisecond for one payment are still different 
 });
 
 // ── The amount, the asset, the recipient ─────────────────────────────────────
+// Judged on the transaction the page pointed at: a verdict is only ever about the claim's own.
 
 test("anything other than exactly 1.00 USDC to the payee is refused", async () => {
   for (const received of [0, 1, 999_999, 1_000_001, 2_000_000, 100_000_000]) {
-    const { claim, rpc } = paid({ post: [balance(2, 7_000_000 + received)] });
-    const result = await verify({ claim, rpc });
+    const { claim, rpc, signature } = paid({ post: [balance(2, 7_000_000 + received)] });
+    const result = await verify({ claim, signature, rpc });
     assert.equal(result.ok, false, String(received));
     assert.equal(result.status, 400);
     assert.equal(result.reason, "wrong_amount", String(received));
@@ -211,84 +212,90 @@ test("anything other than exactly 1.00 USDC to the payee is refused", async () =
 });
 
 test("three 1.00 USDC transfers in one transaction are not one payment", async () => {
-  const { claim, rpc } = paid({ post: [balance(2, 10_000_000)] });
-  assert.equal((await verify({ claim, rpc })).reason, "wrong_amount");
+  const { claim, rpc, signature } = paid({ post: [balance(2, 10_000_000)] });
+  assert.equal((await verify({ claim, signature, rpc })).reason, "wrong_amount");
 });
 
 test("a look-alike mint is not USDC", async () => {
-  const { claim, rpc } = paid({
+  const { claim, rpc, signature } = paid({
     pre: [balance(2, 0, { mint: OTHER_MINT })],
     post: [balance(2, 1_000_000, { mint: OTHER_MINT })],
   });
-  const result = await verify({ claim, rpc });
+  const result = await verify({ claim, signature, rpc });
   assert.equal(result.ok, false);
   assert.equal(result.reason, "wrong_mint");
 });
 
 test("a balance row that claims USDC under Token-2022 is never counted as USDC", async () => {
-  const { claim, rpc } = paid({
+  const { claim, rpc, signature } = paid({
     pre: [balance(2, 7_000_000, { programId: TOKEN_2022 })],
     post: [balance(2, 8_000_000, { programId: TOKEN_2022 })],
   });
   // No such account can exist on chain, so this is a node to distrust: nothing granted, nothing decided.
-  const result = await verify({ claim, rpc });
+  const result = await verify({ claim, signature, rpc });
   assert.equal(result.ok, false);
   assert.equal(result.status, 503);
 });
 
 test("1.00 USDC into a token account someone else owns pays nobody we know", async () => {
-  const { claim, rpc } = paid({
+  const { claim, rpc, signature } = paid({
     pre: [balance(2, 7_000_000, { owner: STRANGER })],
     post: [balance(2, 8_000_000, { owner: STRANGER })],
   });
-  assert.equal((await verify({ claim, rpc })).reason, "wrong_amount");
+  assert.equal((await verify({ claim, signature, rpc })).reason, "wrong_amount");
 });
 
 test("USDC moved between the payee's own accounts is not a payment", async () => {
-  const { claim, rpc } = paid({
+  const { claim, rpc, signature } = paid({
     pre: [balance(2, 7_000_000), balance(6, 3_000_000)],
     post: [balance(2, 8_000_000), balance(6, 2_000_000)],
   });
-  assert.equal((await verify({ claim, rpc })).reason, "wrong_amount");
+  assert.equal((await verify({ claim, signature, rpc })).reason, "wrong_amount");
 });
 
 test("1.00 USDC in and straight back out nets to nothing", async () => {
-  const { claim, rpc } = paid({ pre: [balance(2, 7_000_000)], post: [balance(2, 7_000_000)] });
-  assert.equal((await verify({ claim, rpc })).reason, "wrong_amount");
+  const { claim, rpc, signature } = paid({ pre: [balance(2, 7_000_000)], post: [balance(2, 7_000_000)] });
+  assert.equal((await verify({ claim, signature, rpc })).reason, "wrong_amount");
 });
 
 test("an account the payee stopped owning in the transaction counts as money out", async () => {
   // The payee's account gained 1.00, but another account of the payee's, holding 1.00, left its ownership.
-  const { claim, rpc } = paid({
+  const { claim, rpc, signature } = paid({
     pre: [balance(2, 7_000_000), balance(6, 1_000_000)],
     post: [balance(2, 8_000_000), balance(6, 1_000_000, { owner: STRANGER })],
   });
-  assert.equal((await verify({ claim, rpc })).reason, "wrong_amount");
+  assert.equal((await verify({ claim, signature, rpc })).reason, "wrong_amount");
 });
 
 test("lamports alone, with no token balances changing, are not a payment", async () => {
-  const { claim, rpc } = paid({ pre: [], post: [] });
-  assert.equal((await verify({ claim, rpc })).reason, "wrong_amount");
+  const { claim, rpc, signature } = paid({ pre: [], post: [] });
+  assert.equal((await verify({ claim, signature, rpc })).reason, "wrong_amount");
 });
 
 // ── Success and finality ─────────────────────────────────────────────────────
 
-test("a transaction that failed on chain is not a payment", async () => {
-  const { claim, rpc } = paid({ err: { InstructionError: [1, { Custom: 1 }] } });
-  const result = await verify({ claim, rpc });
+test("the page's own transaction that failed on chain is not a payment", async () => {
+  const { claim, rpc, signature } = paid({ err: { InstructionError: [1, { Custom: 1 }] } });
+  const result = await verify({ claim, signature, rpc });
   assert.equal(result.status, 400);
   assert.equal(result.reason, "failed");
-  assert.equal(rpc.calls.getTransaction, 0);
+  // Found only by its reference, a failed transaction may be anyone's: it is skipped, never read, never a verdict.
+  const unpointed = await verify({ claim, rpc });
+  assert.equal(unpointed.status, 202);
+  assert.equal(unpointed.reason, "not_found");
+  assert.equal(rpc.calls.getTransaction, 1);
 });
 
-test("a transaction listed as successful but recorded as failed is the failure it records", async () => {
+test("the page's own transaction, listed as successful but recorded as failed, is the failure it records", async () => {
   const { claim, reference } = newClaim();
   const tx = paymentTx({ references: [reference] });
   const served = structuredClone(tx);
   served.meta.err = { InstructionError: [1, { Custom: 1 }] };
-  const result = await verify({ claim, rpc: chainRpc([{ tx, served }]) });
+  const rpc = chainRpc([{ tx, served }]);
+  const result = await verify({ claim, signature: tx.transaction.signatures[0], rpc });
   assert.equal(result.status, 400);
   assert.equal(result.reason, "failed");
+  assert.equal((await verify({ claim, rpc })).reason, "not_found");
 });
 
 test("a payment that is confirmed but not final is pending, and its transaction is not fetched", async () => {
@@ -359,6 +366,60 @@ test("a full page of signatures hides the oldest, so the answer is 'cannot tell'
   assert.equal(result.status, 503);
   assert.equal(result.reason, "unavailable");
   assert.equal(rpc.calls.getTransaction, 0);
+});
+
+test("a full page that still shows the payment is no reason to stall: every successful row is a candidate", async () => {
+  // The customer's payment and 999 later transactions naming its public reference.
+  const customer = paid();
+  const junk = Array.from({ length: SIGNATURE_LIMIT - 1 }, () =>
+    paymentTx({ references: [customer.reference], pre: [balance(2, 8_000_000)], post: [balance(2, 8_000_000)] })
+  );
+  const rpc = chainRpc([customer.tx, ...junk]);
+  const result = await verify({ claim: customer.claim, rpc });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(readUnlockToken(result.token, SECRET, NOW).signature, customer.signature);
+  assert.equal(rpc.calls.getTransaction, 1);
+});
+
+test("a successful transaction that pays nothing, landed ahead of the payment, does not hide it", async () => {
+  // Someone who saw the reference first (a fork, or a leader) lands a transaction naming it.
+  const { claim, reference, tx, signature } = paid();
+  const ahead = paymentTx({ references: [reference], pre: [balance(2, 8_000_000)], post: [balance(2, 8_000_000)] });
+  const result = await verify({ claim, rpc: chainRpc([ahead, tx]) });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(readUnlockToken(result.token, SECRET, NOW).signature, signature);
+});
+
+test("the reference listing never gives a verdict: only the page's own transaction, read final, can be refused", async () => {
+  const { claim, reference } = newClaim();
+  const own = paymentTx({ references: [reference] });
+  const theirs = [
+    paymentTx({ references: [reference], pre: [balance(2, 8_000_000)], post: [balance(2, 8_000_000)] }),
+    paymentTx({ references: [reference], post: [balance(2, 9_000_000)] }),
+    paymentTx({ references: [reference], pre: [balance(2, 0, { mint: OTHER_MINT })], post: [balance(2, 1_000_000, { mint: OTHER_MINT })] }),
+    paymentTx({ references: [reference], err: { InstructionError: [0, { Custom: 1 }] } }),
+  ];
+  // The page's own transaction is not on chain yet (re-broadcast after a fork, say).
+  const rpc = chainRpc([...theirs, { tx: own, status: "unseen" }]);
+  for (const signature of [own.transaction.signatures[0], undefined]) {
+    const result = await verify({ claim, signature, rpc });
+    assert.equal(result.ok, false);
+    // Not a 400: the page keeps its claim, and finds the payment once it lands.
+    assert.equal(result.status, 202, `${signature}: ${JSON.stringify(result)}`);
+    assert.equal(result.reason, "not_found");
+  }
+});
+
+test("no more than four listed transactions are read per check; past that the answer is 'cannot tell'", async () => {
+  const { claim, reference, tx } = paid();
+  const ahead = Array.from({ length: 5 }, () =>
+    paymentTx({ references: [reference], pre: [balance(2, 8_000_000)], post: [balance(2, 8_000_000)] })
+  );
+  const rpc = chainRpc([...ahead, tx]);
+  const result = await verify({ claim, rpc });
+  assert.equal(result.status, 503);
+  assert.equal(result.reason, "unavailable");
+  assert.equal(rpc.calls.getTransaction, 4);
 });
 
 test("the transaction the page sent is judged on its own, however many others name the reference", async () => {

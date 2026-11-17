@@ -203,6 +203,17 @@ test("before the payee's USDC account exists, the payer needs its rent as well a
   assert.equal(result.status, 200);
 });
 
+test("the payee cannot pay itself: prepare says to use another wallet, before any RPC call", async () => {
+  // A transfer from the payee's USDC account to itself moves nothing, so it could never verify.
+  rpc.lamports.set(PAY_TO, 50_000_000);
+  const { status, body } = await read(await prepare(post("/api/prepare", { payer: PAY_TO, claim: newClaim().claim })));
+  assert.equal(status, 400);
+  assert.equal(body.reason, "payee");
+  assert.match(body.error, /another wallet/);
+  assert.equal(body.transaction, undefined);
+  assert.equal(rpc.totalCalls(), 0);
+});
+
 test("prepare rejects malformed requests without spending an RPC call", async () => {
   const claim = newClaim().claim;
   const requests = [
