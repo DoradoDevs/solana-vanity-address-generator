@@ -1,6 +1,6 @@
 # VanityGrinder knowledge base
 
-Last verified: 2026-11-19 against `4deedde` (branch `audit/2026-11-16`; payment, header and key fixes in `07131e5`, payee pin and pre-sign check in `edb18ad`, review fixes in `e4ea97a`, CI in `9d8eba3`, spl-token removal in `9273afb`, round-4 fixes in `a013fa9`, round-5 fixes in `4deedde`).
+Last verified: 2026-11-19 against `31a7a1b` (branch `audit/2026-11-16`; payment, header and key fixes in `07131e5`, payee pin and pre-sign check in `edb18ad`, review fixes in `e4ea97a`, CI in `9d8eba3`, spl-token removal in `9273afb`, round-4 fixes in `a013fa9`, round-5 fixes in `4deedde`, refund-tool fixes in `31a7a1b`).
 
 The code wins over this page. If they disagree, fix the page.
 
