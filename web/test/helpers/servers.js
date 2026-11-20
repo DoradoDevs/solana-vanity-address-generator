@@ -68,7 +68,7 @@ export async function startRpc() {
     getMinimumBalanceForRentExemption: () => 2_039_280,
     getSignaturesForAddress: ([address, options]) => {
       if (options?.commitment !== "confirmed") throw new Error("expected commitment confirmed");
-      return state.txs
+      const rows = state.txs
         .filter(({ tx, status }) => {
           if (status === "unseen" || status === "processed") return false;
           return tx.transaction.message.accountKeys.some((key) => key.pubkey === address);
@@ -82,6 +82,10 @@ export async function startRpc() {
           confirmationStatus: status,
         }))
         .reverse();
+      // Like a node: at most `limit` rows, starting just older than `before`; an unknown `before` gives nothing.
+      const start = options.before === undefined ? 0 : rows.findIndex((row) => row.signature === options.before) + 1;
+      if (options.before !== undefined && start === 0) return [];
+      return rows.slice(start, start + (options.limit ?? 1000));
     },
     getSignatureStatuses: ([signatures, options]) => {
       if (options?.searchTransactionHistory !== true) throw new Error("expected searchTransactionHistory");

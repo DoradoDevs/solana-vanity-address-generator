@@ -14,7 +14,9 @@ export const config = {
 const MESSAGES = {
   pending: "The payment is on chain and waiting to be finalized.",
   not_found: "No payment has reached the chain for this attempt yet.",
+  searching: "Many transactions name this payment. Still looking through them for it.",
   reused: "That payment was already used for a grind.",
+  refunded: "That payment was refunded to the wallet that paid it, so it cannot unlock a grind.",
   failed: "The payment transaction failed on chain, so no USDC moved.",
   wrong_amount: "The transaction did not pay exactly 1.00 USDC.",
   wrong_mint: "The token received was not USDC.",
@@ -45,6 +47,7 @@ export default async function verify(request) {
     result = await verifyPayment({
       claim: body.claim,
       signature: body.signature,
+      cursor: body.cursor,
       rpc: createRpc(rpcUrl),
       store: blobStore(),
       payTo,
@@ -55,6 +58,6 @@ export default async function verify(request) {
     console.log(`verify failure ${describeFailure(error)}`);
     return reply(503, "unavailable");
   }
-  if (!result.ok) return reply(result.status, result.reason);
+  if (!result.ok) return reply(result.status, result.reason, result.cursor ? { cursor: result.cursor } : {});
   return reply(200, undefined, { token: result.token, expiresAt: result.expiresAt });
 }

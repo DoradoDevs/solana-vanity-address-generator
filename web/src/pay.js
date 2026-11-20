@@ -11,7 +11,6 @@
 import { getWallets } from "@wallet-standard/app";
 import { NETWORK_FEE_NOTE, PAY_ERRORS, messageForWalletError } from "../../shared/pay-copy.js";
 import { browserStorage, createPayFlow } from "./pay-flow.js";
-import { referenceOf } from "./transfer-check.js";
 import { offerInAppBrowserLinks, phantomBrowseUrl, solflareBrowseUrl } from "./wallet-links.js";
 
 const PREFERRED = ["Phantom", "Solflare", "Backpack"];
@@ -19,17 +18,21 @@ const PREFERRED = ["Phantom", "Solflare", "Backpack"];
 const WATCHING = {
   unseen: "Looking for your payment on chain. This usually takes a few seconds.",
   pending: "Payment found. Waiting for the network to finalize it, about 15 seconds.",
+  searching: "Many transactions name this payment. Looking through them for yours…",
   unavailable: "The payment check is not answering. Your payment is saved in this browser. Trying again…",
 };
 const GONE = "No payment from that attempt landed on chain, so no USDC was charged. Choose a wallet to pay again.";
 const ABANDONED = "That payment was given up. Choose a wallet to pay again.";
+// What DEPLOY.md, "Refund requests", delivers: a payment never used for a grind goes back to
+// the wallet that paid it, once it is a day old. Nothing secret is ever asked for.
 const REFUND_HOW =
-  "open an issue on the project's GitHub page (the Source link at the foot of this page) quoting it, to have the 1.00 USDC refunded to the wallet that paid";
+  "you can ask for a refund: open an issue on the project's GitHub page (the Source link at the foot of this page) quoting the reference. A payment that was never used for a grind is refunded to the wallet that paid it, once it is a day old. Post nothing else from this page";
 const FAILED =
   "The payment transaction failed on chain, so no USDC moved. Choose a wallet to try again. " + NETWORK_FEE_NOTE;
 const NOT_A_PAYMENT =
   "A transaction was found for that attempt, but it did not pay exactly 1.00 USDC, so it cannot unlock a grind.";
 const USED = "That payment was already used for a grind.";
+const ELSEWHERE = "That payment was already used, or given up, in another tab of this browser.";
 const STOPPED =
   "Stopped waiting. If a payment was sent, it is saved in this browser and will be found the next time you reach this step.";
 const CANCELLED = "Payment cancelled. Nothing was charged for this attempt.";
@@ -50,7 +53,7 @@ async function post(name, body) {
 
 const flow = createPayFlow({ storage: browserStorage(), post });
 
-/** The unlock this visit was given: { token, expiresAt }. */
+/** The unlock this visit was given: { claim, token, expiresAt }. Only ever spent for that claim. */
 let paidUnlock = null;
 let spending = false;
 let waiters = [];
@@ -72,7 +75,7 @@ function minutesAndSeconds(ms) {
 
 /** What the page is waiting for, in words that are true for this attempt. */
 function watchingText(state, info) {
-  if (state !== "unseen" || info.signature) return WATCHING[state];
+  if (state !== "unseen" || info.signature || info.giveUpIn === null) return WATCHING[state];
   const left = minutesAndSeconds(info.giveUpIn);
   if (info.walletError) {
     return `Your wallet reported an error, so this page is making sure no payment went out before you pay again. Up to ${left} left.`;
@@ -80,7 +83,11 @@ function watchingText(state, info) {
   return `Looking for a payment from this attempt. If none has landed, you can pay again in ${left} at most.`;
 }
 
-/** A note under the payment buttons, with one action. One per kind; a new one replaces the old. */
+/**
+ * A note under the payment buttons, with one action. One per kind; a new one replaces the old.
+ * `text` is a string, or a list of strings and { id } parts: an id (a reference or a
+ * signature) gets its own element, which wraps on a narrow screen and selects whole on a tap.
+ */
 function showNotice(kind, text, actionLabel, onAction) {
   const gate = document.getElementById("pay-gate");
   const status = document.getElementById("pay-status");
@@ -91,7 +98,16 @@ function showNotice(kind, text, actionLabel, onAction) {
   box.className = "pay-mobile-help";
   const note = document.createElement("p");
   note.className = "pay-mobile-note";
-  note.textContent = text;
+  for (const part of Array.isArray(text) ? text : [text]) {
+    if (typeof part === "string") {
+      note.append(part);
+      continue;
+    }
+    const id = document.createElement("code");
+    id.className = "pay-id";
+    id.textContent = part.id;
+    note.append(id);
+  }
   box.appendChild(note);
   const button = document.createElement("button");
   button.type = "button";
@@ -112,13 +128,47 @@ function showRetiredNotice() {
   if (!reference) return;
   showNotice(
     "retired",
-    `A payment started on an earlier version of this page was never used for a grind, and it cannot unlock one now. Its reference is ${reference}. If 1.00 USDC left your wallet for it, ${REFUND_HOW}.`,
+    [
+      "A payment started on an earlier version of this page was never used for a grind, and it cannot unlock one now. Its reference is ",
+      { id: reference },
+      `. If 1.00 USDC left your wallet for it, ${REFUND_HOW}.`,
+    ],
     "Hide this note",
     () => {
       flow.dismissRetired();
       clearNotice("retired");
     }
   );
+}
+
+const REFUND_WHY = {
+  abandoned: "You gave up a payment from this browser.",
+  rejected: "A payment from this browser was found on chain, but it did not pay exactly 1.00 USDC to VanityGrinder, so it cannot unlock a grind.",
+};
+
+/**
+ * Payments this browser gave up, or whose own transaction paid the wrong amount: each is
+ * shown with what to quote for a refund until the customer hides it, across reloads and
+ * later payments (pay-flow keeps them). Never the claim, which would let anyone redeem.
+ */
+function showRefundNotes() {
+  for (const note of flow.refundNotes()) {
+    const kind = `refund-${note.reference}`;
+    showNotice(
+      kind,
+      [
+        `${REFUND_WHY[note.why] ?? REFUND_WHY.abandoned} Its reference is `,
+        { id: note.reference },
+        ...(note.signature ? [" and its transaction ", { id: note.signature }] : []),
+        `. If 1.00 USDC left your wallet for it, ${REFUND_HOW}.`,
+      ],
+      "Hide this note",
+      () => {
+        flow.dismissRefund(note.reference);
+        clearNotice(kind);
+      }
+    );
+  }
 }
 
 /** After a long wait, let the customer give the saved payment up, with a warning, and say how to be refunded. */
@@ -139,20 +189,11 @@ function offerAbandon(claim) {
 }
 
 async function abandonPayment(claim) {
-  const given = flow.abandon(claim);
+  const given = await flow.abandon(claim);
   watching?.controller.abort();
-  if (!given) {
-    clearNotice("abandon");
-    return;
-  }
-  const reference = await referenceOf(given.claim);
-  const sent = given.signature ? ` and transaction ${given.signature}` : "";
-  showNotice(
-    "abandon",
-    `Given up. Its reference is ${reference}${sent}. If 1.00 USDC left your wallet for it, ${REFUND_HOW}.`,
-    "Hide this note",
-    () => clearNotice("abandon")
-  );
+  clearNotice("abandon");
+  if (!given) return;
+  showRefundNotes();
   setStatus(ABANDONED);
 }
 
@@ -253,8 +294,8 @@ function renderWallets() {
   setStatus(`Choose Phantom, Solflare, Backpack, or another Solana wallet. ${NETWORK_FEE_NOTE}`);
 }
 
-function markPaid(token, expiresAt) {
-  paidUnlock = { token, expiresAt };
+function markPaid(claim, token, expiresAt) {
+  paidUnlock = { claim, token, expiresAt };
   listingWallets = false;
   document.getElementById("pay-wallet-list")?.replaceChildren();
   setStatus("Paid. Starting this grind.");
@@ -280,10 +321,13 @@ function follow() {
     })
     .then((result) => {
       if (result.outcome !== "stopped") clearNotice("abandon");
-      if (result.outcome === "paid") markPaid(result.token, result.expiresAt);
+      if (result.outcome === "paid") markPaid(result.claim, result.token, result.expiresAt);
       else if (result.outcome === "gone") setStatus(GONE);
       else if (result.outcome === "used") setStatus(result.message || USED);
-      else if (result.outcome === "rejected") setStatus(result.reason === "failed" ? FAILED : NOT_A_PAYMENT);
+      else if (result.outcome === "rejected") {
+        setStatus(result.reason === "failed" ? FAILED : NOT_A_PAYMENT);
+        showRefundNotes();
+      }
       // Stopped with nothing left saved: the customer gave the payment up.
       else if (result.outcome === "stopped" && !flow.pending()) return "abandoned";
       return result.outcome;
@@ -399,6 +443,7 @@ export function initPay() {
   if (line) line.textContent = "$1 in USDC per grind, paid from your wallet.";
   warmWallets();
   showRetiredNotice();
+  showRefundNotes();
   // A payment from an earlier visit, or one the page was closed on, is picked up straight away.
   if (flow.pending()) {
     setStatus("Checking the payment saved in this browser…");
@@ -426,6 +471,7 @@ export async function ensurePaid() {
     setStatus(`Waiting for the $1 USDC payment. Connect a wallet below, or choose Not now. ${NETWORK_FEE_NOTE}`);
   }
   showRetiredNotice();
+  showRefundNotes();
   document.getElementById("pay-gate")?.scrollIntoView({ block: "nearest" });
   return new Promise((resolve) => {
     waiters.push(resolve);
@@ -447,8 +493,11 @@ export function spendInProgress() {
 
 /**
  * Spend the unlock this browser holds. The grind starts only when this returns ok.
- * flow.unlock saves the token with the claim first and replays a saved one, so a
- * spend whose answer was lost is not lost with the page.
+ * flow.unlock spends only for the claim the unlock was issued for, one tab at a
+ * time, and saves the token with the claim first, so a spend whose answer was
+ * lost is not lost with the page. Whatever it answers short of ok, this visit's
+ * unlock is dropped: the saved attempt is the truth, and the next step follows
+ * it again (with the give-up offer) instead of holding on to a token.
  */
 export async function consumePaidGrind() {
   if (!paidUnlock) return { ok: false, message: "Pay $1 before grinding." };
@@ -461,19 +510,21 @@ export async function consumePaidGrind() {
     spending = false;
   }
 
+  paidUnlock = null;
+  document.getElementById("pay-gate")?.classList.remove("paid");
   if (spent.ok) {
-    paidUnlock = null;
     setStatus("Grind unlocked. Pay again for another run.");
-    document.getElementById("pay-gate")?.classList.remove("paid");
     return { ok: true };
   }
-  if (spent.reason === "reused") {
-    paidUnlock = null;
-    document.getElementById("pay-gate")?.classList.remove("paid");
-    setStatus(USED);
-    return { ok: false, message: USED };
+  let message;
+  if (spent.reason === "reused" || spent.reason === "refunded") message = spent.message || USED;
+  else if (spent.reason === "elsewhere") message = ELSEWHERE;
+  else if (spent.reason === "rejected") {
+    message = NOT_A_PAYMENT;
+    showRefundNotes();
+  } else {
+    message = "The payment check is not answering. Your payment is saved in this browser. Try again in a moment.";
   }
-  const message = "The payment check is not answering. Your payment is saved in this browser. Try again in a moment.";
   setStatus(message);
   return { ok: false, message };
 }

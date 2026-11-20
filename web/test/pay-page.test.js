@@ -3,13 +3,15 @@
 // Each test loads a fresh copy of the module.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
+import fs from "node:fs";
 import { afterEach, test } from "node:test";
 import { getWallets } from "@wallet-standard/app";
 import { encodeBase58 } from "../../shared/base58.js";
 import { PAY_ERRORS } from "../../shared/pay-copy.js";
 import { referenceForClaim } from "../netlify/functions/lib/claim.js";
 import { buildUnsignedTransaction } from "../netlify/functions/lib/tx.js";
-import { CLAIM_KEY, RETIRED_REF_KEY } from "../src/pay-flow.js";
+import { ABANDON_OFFER_AFTER_MS, CLAIM_KEY, REFUND_NOTES_KEY, RETIRED_REF_KEY } from "../src/pay-flow.js";
+import { referenceOf } from "../src/transfer-check.js";
 import { PAYER, PAY_TO, STRANGER } from "./helpers/chain.js";
 
 // ── A document just large enough for pay.js ──────────────────────────────────
@@ -30,6 +32,9 @@ function element(tag, id = "") {
       child.parent = el;
       el.children.push(child);
       return child;
+    },
+    append: (...items) => {
+      for (const item of items) el.appendChild(typeof item === "string" ? { text: item } : item);
     },
     prepend: (child) => {
       child.parent = el;
@@ -60,7 +65,7 @@ function fakeDocument() {
   const tip = element("p", "tip-address");
   tip.textContent = PAY_TO;
   const roots = [gate, tip];
-  const find = (el, id) => (el.id === id ? el : el.children.reduce((hit, c) => hit || find(c, id), null));
+  const find = (el, id) => (el.id === id ? el : (el.children || []).reduce((hit, c) => hit || find(c, id), null));
   return {
     tip,
     getElementById: (id) => roots.reduce((hit, root) => hit || find(root, id), null),
@@ -79,6 +84,16 @@ function fakeStorage(initial = {}) {
 }
 
 const saved = (storage) => JSON.parse(storage.getItem(CLAIM_KEY) || "null");
+
+/** What an element reads as: its own text, then its children's, in order. */
+const textOf = (el) => (el.textContent || "") + el.children.map((child) => child.text ?? textOf(child)).join("");
+
+/** The elements under `el` with this tag and class. */
+const findAll = (el, tag, className) =>
+  el.children.flatMap((child) => [
+    ...(child.tag === tag && child.className === className ? [child] : []),
+    ...(child.children ? findAll(child, tag, className) : []),
+  ]);
 
 // ── The server and the wallet ────────────────────────────────────────────────
 
@@ -223,7 +238,7 @@ test("a wallet error nobody recognises keeps the claim and looks for the payment
   unregister();
   for (const [error, kind] of [
     [new Error("User rejected the request."), "rejected"],
-    [new Error("Transaction simulation failed: Blockhash not found"), "not_sent"],
+    [new Error("Transaction simulation failed: Attempt to debit an account but found no record of a prior credit."), "insufficient_sol"],
   ]) {
     const declined = fakeWallet(error);
     const other = await load({ wallet: declined.wallet });
@@ -282,12 +297,13 @@ test("the token is saved before consume, the tab asks before closing mid-spend, 
   assert.equal(page.pay.spendInProgress(), false);
   unregister();
 
-  // A reload: the saved token is spent again, without asking verify.
-  const again = fakeApi({ consume: [CONSUMED] });
+  // A reload: verify says the payment was spent (the lost spend landed). The token this
+  // browser saved is what spent it, so it is sent again, and its answer is "ok".
+  const again = fakeApi({ verify: [{ status: 409, data: { ok: false, reason: "reused" } }], consume: [CONSUMED] });
   const reloaded = await load({ storage, api: again });
   assert.deepEqual(await reloaded.pay.ensurePaid(), { ok: true });
   assert.deepEqual(await reloaded.pay.consumePaidGrind(), { ok: true });
-  assert.equal(again.of("verify").length, 0);
+  assert.equal(again.of("verify").length, 1);
   assert.deepEqual(again.of("consume").map((r) => r.body.token), ["token-1"]);
   assert.equal(storage.getItem(CLAIM_KEY), null);
 });
@@ -319,9 +335,126 @@ test("a reference saved by the page before claims is shown with how to get a ref
   const page = await load({ storage });
   const notice = page.document.getElementById("pay-notice-retired");
   assert.ok(notice);
-  assert.match(notice.children[0].textContent, new RegExp(old));
-  assert.match(notice.children[0].textContent, /refunded/);
+  assert.match(textOf(notice.children[0]), new RegExp(old));
+  assert.match(textOf(notice.children[0]), /refunded to the wallet that paid it, once it is a day old/);
+  assert.deepEqual(findAll(notice, "code", "pay-id").map((el) => el.textContent), [old]);
   notice.children[1].click();
   assert.equal(page.document.getElementById("pay-notice-retired"), null);
   assert.equal(storage.getItem(RETIRED_REF_KEY), null);
+});
+
+// ── Round 4: giving up, refund notes, phones, tabs, and leaving mid-spend ─────
+
+const DOWN = { status: 503, data: { ok: false, reason: "unavailable" } };
+
+/** A saved attempt sent `ago` ms ago, with the wallet's signature. */
+function savedAttempt(ago, signature = encodeBase58(new Uint8Array(64).fill(8))) {
+  const claim = encodeBase58(new Uint8Array(randomBytes(32)));
+  const at = Date.now() - ago;
+  return { claim, signature, storage: fakeStorage({ [CLAIM_KEY]: JSON.stringify({ claim, createdAt: at, sentAt: at, signature }) }) };
+}
+
+test("give-up is offered only after ten minutes unresolved, asks twice, and leaves the reference and transaction to quote", async () => {
+  // One minute in: the check is down, and nothing is offered.
+  const young = savedAttempt(60_000);
+  const early = await load({ storage: young.storage, api: fakeApi({ verify: [DOWN] }) });
+  await until(() => early.api.of("verify").length === 1 && early.status().startsWith("The payment check is not answering"), "the first check");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(early.document.getElementById("pay-notice-abandon"), null);
+  early.document.getElementById("pay-cancel").click();
+
+  // Eleven minutes in: offered after one check.
+  const { claim, signature, storage } = savedAttempt(ABANDON_OFFER_AFTER_MS + 60_000);
+  const page = await load({ storage, api: fakeApi({ verify: [DOWN] }) });
+  await until(() => page.document.getElementById("pay-notice-abandon"), "the offer");
+  const offer = page.document.getElementById("pay-notice-abandon");
+  assert.match(textOf(offer.children[0]), /over ten minutes/);
+
+  // The first click only warns. The payment is still saved.
+  offer.children[1].click();
+  const warning = page.document.getElementById("pay-notice-abandon");
+  assert.match(textOf(warning.children[0]), /will no longer be able to use it.*Give it up\?/);
+  assert.equal(saved(storage).claim, claim);
+
+  // The second click gives it up and leaves a note with what to quote, never the claim.
+  warning.children[1].click();
+  const reference = await referenceOf(claim);
+  const noteId = `pay-notice-refund-${reference}`;
+  await until(() => page.document.getElementById(noteId), "the refund note");
+  assert.equal(storage.getItem(CLAIM_KEY), null);
+  assert.equal(page.document.getElementById("pay-notice-abandon"), null);
+  assert.equal(page.status(), "That payment was given up. Choose a wallet to pay again.");
+  const note = page.document.getElementById(noteId);
+  assert.deepEqual(findAll(note, "code", "pay-id").map((el) => el.textContent), [reference, signature]);
+  assert.match(textOf(note.children[0]), /refunded to the wallet that paid it, once it is a day old/);
+  assert.doesNotMatch(textOf(note), new RegExp(claim));
+  unregister();
+
+  // A reload, and a later payment that is found: the note is still there until hidden.
+  const next = savedAttempt(5_000);
+  next.storage.setItem(REFUND_NOTES_KEY, storage.getItem(REFUND_NOTES_KEY));
+  const reloaded = await load({ storage: next.storage, api: fakeApi({ verify: [PAID] }) });
+  assert.deepEqual(await reloaded.pay.ensurePaid(), { ok: true });
+  const kept = reloaded.document.getElementById(noteId);
+  assert.ok(kept, "shown again after the reload and the next payment");
+  kept.children[1].click();
+  assert.equal(reloaded.document.getElementById(noteId), null);
+  assert.equal(next.storage.getItem(REFUND_NOTES_KEY), null);
+});
+
+test("on a phone the reference and the transaction wrap and select whole: each is its own element, styled to", () => {
+  const css = fs.readFileSync(new URL("../src/style.css", import.meta.url), "utf8");
+  const rule = css.match(/\.pay-id\s*\{([^}]*)\}/);
+  assert.ok(rule, ".pay-id rule");
+  assert.match(rule[1], /overflow-wrap:\s*anywhere/);
+  assert.match(rule[1], /word-break:\s*break-all/);
+  assert.match(rule[1], /(^|[^-])user-select:\s*all/);
+});
+
+test("a second tab's grind does not spend a payment this tab already spent: it is told so, and nothing is sent", async () => {
+  const storage = fakeStorage();
+  const { wallet } = fakeWallet([{ signature: new Uint8Array(64).fill(6) }]);
+  const apiA = fakeApi({ verify: [PAID], consume: [CONSUMED] });
+  const tabA = await load({ storage, api: apiA, wallet });
+  await choose(tabA, wallet);
+  await until(() => tabA.status() === "Paid. Starting this grind.", "tab A paid");
+  unregister();
+  // The same browser, another tab: it follows the same saved payment and is paid too.
+  const apiB = fakeApi({ verify: [PAID], consume: [CONSUMED] });
+  const tabB = await load({ storage, api: apiB });
+  assert.deepEqual(await tabB.pay.ensurePaid(), { ok: true });
+  assert.deepEqual(await tabB.pay.consumePaidGrind(), { ok: true });
+  // Tab A starts its grind afterwards.
+  const second = await tabA.pay.consumePaidGrind();
+  // (Both tabs share one global document here, so the answer is read from what the call returns.)
+  assert.deepEqual(second, { ok: false, message: "That payment was already used, or given up, in another tab of this browser." });
+  assert.equal(apiA.of("consume").length, 0);
+  assert.equal(apiB.of("consume").length, 1);
+});
+
+test("a spend that gets no answer drops this visit's unlock: the next step follows the payment again", async () => {
+  const storage = fakeStorage();
+  const api = fakeApi({ verify: [PAID, PAID], consume: [DOWN, DOWN, DOWN, DOWN, CONSUMED] });
+  const { wallet } = fakeWallet([{ signature: new Uint8Array(64).fill(7) }]);
+  const page = await load({ storage, api, wallet });
+  await choose(page, wallet);
+  await until(() => page.status() === "Paid. Starting this grind.", "paid");
+  assert.equal((await page.pay.consumePaidGrind()).ok, false);
+  assert.equal(page.document.getElementById("pay-gate").classList.names.has("paid"), false);
+  // Nothing is held in memory any more: the saved attempt is followed again through verify.
+  assert.deepEqual(await page.pay.ensurePaid(), { ok: true });
+  assert.equal(api.of("verify").length, 2);
+  assert.deepEqual(await page.pay.consumePaidGrind(), { ok: true });
+});
+
+test("closing the tab while a spend is on its way asks first (main.js's beforeunload names spendInProgress)", () => {
+  const main = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
+  const handler = main.match(/addEventListener\("beforeunload", \(event\) => \{([\s\S]*?)\n\}\);/);
+  assert.ok(handler, "one beforeunload handler");
+  const guard = handler[1].match(/if \(([^)]*\)?[^)]*)\) return;/);
+  assert.ok(guard, "the early return");
+  assert.match(guard[1], /!spendInProgress\(\)/);
+  assert.match(guard[1], /!grinding/);
+  assert.match(guard[1], /!holdingKey/);
+  assert.match(handler[1], /event\.preventDefault\(\)/);
 });

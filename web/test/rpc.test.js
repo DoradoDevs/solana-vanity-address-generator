@@ -28,6 +28,12 @@ test("requests carry the commitment each check depends on", async () => {
   await sigs.rpc.getSignaturesForAddress("Addr");
   assert.deepEqual(sigs.requests[0].body.params, ["Addr", { limit: SIGNATURE_LIMIT, commitment: "confirmed" }]);
   assert.equal(SIGNATURE_LIMIT, 1000);
+  // The next page back starts just older than the oldest signature of the last one.
+  await sigs.rpc.getSignaturesForAddress("Addr", { before: SIG });
+  assert.deepEqual(sigs.requests[1].body.params, ["Addr", { limit: SIGNATURE_LIMIT, commitment: "confirmed", before: SIG }]);
+  // A cursor that is not a signature never reaches the node.
+  assert.match((await failure(sigs.rpc.getSignaturesForAddress("Addr", { before: "../x" }))).message, /bad cursor/);
+  assert.equal(sigs.requests.length, 2);
 
   const statuses = rpcReturning({ context: { slot: 1 }, value: [null] });
   assert.deepEqual(await statuses.rpc.getSignatureStatuses([SIG]), [null]);

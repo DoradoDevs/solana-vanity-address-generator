@@ -809,6 +809,15 @@ a.pay-wallet {
   color: var(--text-dim);
 }
 
+/* A reference or signature to quote: wraps on a phone instead of running off the edge, and one tap selects it whole. */
+.pay-id {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  user-select: all;
+  -webkit-user-select: all;
+  color: var(--text);
+}
+
 .pay-gate.paid {
   outline: 1px solid rgba(20, 241, 149, 0.35);
   border-radius: 16px;

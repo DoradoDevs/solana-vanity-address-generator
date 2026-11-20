@@ -57,12 +57,17 @@ export function createRpc(url, { fetch: fetchImpl = fetch, timeoutMs = RPC_TIMEO
 
   return {
     /**
-     * Newest first. Asks for "confirmed" so a payment that has landed but is
-     * not final yet is visible as pending instead of looking absent.
+     * Newest first, at most SIGNATURE_LIMIT rows. Asks for "confirmed" so a
+     * payment that has landed but is not final yet is visible as pending
+     * instead of looking absent. With `before`, the page starts just older
+     * than that signature: a full page is followed by asking again with the
+     * oldest signature it returned.
      */
-    async getSignaturesForAddress(address) {
+    async getSignaturesForAddress(address, { before } = {}) {
       const method = "getSignaturesForAddress";
-      const rows = await call(method, [address, { limit: SIGNATURE_LIMIT, commitment: "confirmed" }]);
+      if (before !== undefined && !isSignature(before)) throw new RpcError(method, "bad cursor");
+      const options = { limit: SIGNATURE_LIMIT, commitment: "confirmed", ...(before ? { before } : {}) };
+      const rows = await call(method, [address, options]);
       if (!Array.isArray(rows)) throw new RpcError(method, "bad response");
       for (const row of rows) {
         if (!isObject(row) || !isSignature(row.signature) || !("err" in row)) {

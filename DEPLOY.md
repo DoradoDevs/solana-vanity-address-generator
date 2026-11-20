@@ -16,7 +16,7 @@ Set these in the Netlify UI: Site configuration → Environment variables. Scope
 |---|---|---|
 | `PAY_TO_ADDRESS` | No | Leave unset. The address that receives the $1 is pinned in code, `PAY_TO` in `shared/payment.js`: `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp`. If this variable is set, it must be exactly that address; any other value makes quote, prepare and verify answer 503, so this variable cannot redirect payments. That is all the pin guarantees: anyone who can change the build environment (for example `NODE_OPTIONS`, which runs code inside `npm run build`) or deploy code can still change where payments go. |
 | `SOLANA_RPC_URL` | Yes | HTTPS Solana mainnet RPC, for example a Helius or Triton URL. Used only inside the functions. A URL with an API key stays server-side: it is never put in a response, an error, or a log line. |
-| `UNLOCK_SECRET` | Yes | Random string of at least 16 characters. `openssl rand -base64 32`. Signs the unlock token. Unset or shorter than 16 characters, verify and consume answer 500 and no grind can be unlocked. Changing it voids tokens already issued (they last ten minutes); payments are unaffected and simply verify again. |
+| `UNLOCK_SECRET` | Yes | Random string of at least 16 characters. `openssl rand -base64 32`. Signs the unlock token. Unset or shorter than 16 characters, verify and consume answer 500 and no grind can be unlocked. Changing it voids tokens not yet spent (they last ten minutes); their payments are unaffected and simply verify again. A token that already won its spend is still answered "ok" after the change, because consume matches it to the ledger record by its id, so a customer whose spend answer was lost keeps their grind across a rotation. It can be rotated at any time. |
 
 To change where payments go, change `PAY_TO` in `shared/payment.js` (and the tip address in `web/src/site.config.js`) and deploy. Tabs opened before that deploy still hold the old address, so they refuse every payment until reloaded (the page says to reload). Payments already sent to the old address and not yet redeemed cannot be redeemed afterwards: refund them. The page and the functions are built from the same constant: before the wallet is asked to sign, the page decodes the transaction prepare returned and refuses it unless it is exactly 1.00 USDC of the USDC mint from the connected wallet's USDC account to that address's USDC account, naming this attempt's reference, with nothing else in it but the payee account's idempotent creation. The tip address is not a secret.
 
@@ -30,12 +30,12 @@ Each function has its own path under `/api/`. The default `/.netlify/functions/<
 |---|---|
 | `GET /api/quote` | The fixed `1.00` USDC amount, the USDC mint, and the receive address. No RPC call. |
 | `POST /api/prepare` | Body `{ payer, claim }`. Builds the unsigned transfer of exactly 1.00 USDC from the wallet's USDC account to the payee's, with an idempotent create-account instruction and a read-only reference account. The reference is the SHA-256 of the caller's claim. Two RPC requests: balances and a blockhash. Rate limited to 12 a minute per visitor. The page checks the result byte by byte before its wallet sees it (`web/src/transfer-check.js`). |
-| `POST /api/verify` | Body `{ claim, signature }`, the signature being the one the wallet returned (optional). With it, verify reads that transaction directly and ignores anything else that names the reference. Without it, or when the node does not know that signature, verify searches the transactions naming the claim's reference for one that pays (at most four read per request). Requires finality, checks that the transaction names the reference, and checks from the recorded token balances that the payee ended up with exactly 1.00 USDC more. Returns an unlock token, valid ten minutes. A 400 is only ever a verdict on the transaction the page pointed at, read at finalized: the claim's own. The search by reference never ends in a 400, because what it finds may be someone else's; when nothing there pays it answers 202, and when the node's answer cannot be relied on, 503. Either way the page keeps the payment. Writes nothing. Rate limited to 60 a minute per visitor. |
-| `POST /api/consume` | Body `{ token }`. Records the transaction as spent with one conditional write to Netlify Blobs (`onlyIfNew`, which Netlify documents as an atomic conditional write). The first token wins; every other token for that transaction is refused. The winning token gets the same answer if it is sent again, even after it expires, so a lost response does not cost the customer their grind. The terminal starts one grind only after this succeeds. |
+| `POST /api/verify` | Body `{ claim, signature }`, the signature being the one the wallet returned (optional). With it, verify reads that transaction directly and ignores anything else that names the reference. Without it, or when the node does not know that signature, verify searches the transactions naming the claim's reference for one that pays. It lists them newest first, up to two pages of 1000 per request, and reads the oldest first, at most four per request. A history longer than that is answered 202 "searching" with a `cursor` (a signature); the page sends it back as `cursor` in the next request, and keeps it across a reload, so the search carries on where it stopped and always reaches the oldest end. A search that started from a cursor never answers "not found". A payment the operator refunded (see "Refund requests") answers 409 "refunded". Requires finality, checks that the transaction names the reference, and checks from the recorded token balances that the payee ended up with exactly 1.00 USDC more. Returns an unlock token, valid ten minutes. A 400 is only ever a verdict on the transaction the page pointed at, read at finalized: the claim's own. The search by reference never ends in a 400, because what it finds may be someone else's; when nothing there pays it answers 202, and when the node's answer cannot be relied on, 503. Either way the page keeps the payment. Writes nothing. Rate limited to 60 a minute per visitor. |
+| `POST /api/consume` | Body `{ token }`. Records the transaction as spent with one conditional write to Netlify Blobs (`onlyIfNew`, which Netlify documents as an atomic conditional write). The first token wins; every other token for that transaction is refused. The winning token gets the same answer if it is sent again, even after it expires or `UNLOCK_SECRET` changes, so a lost response does not cost the customer their grind: the record keeps the winning token's id, and only that id is answered "ok" again. A payment marked refunded is answered 409 "refunded" to every token. The terminal starts one grind only after this succeeds. |
 
 All POST bodies must be `application/json`. Other content types are refused before any RPC or ledger work, so another site cannot spend the RPC quota through its visitors' browsers.
 
-The ledger is the Blobs store `grind-payments`, one record per spent transaction under `spent/<signature>`. Records written before this version are keyed by reference at the top level. This version does not read them, but they are the only list of customers who paid under the old version and were never given a grind: keep them (see "Before publishing this version").
+The ledger is the Blobs store `grind-payments`, one record per spent transaction under `spent/<signature>`. Records written before this version are keyed by reference at the top level. This version does not read them, but they are what shows which old payments were used: keep them (see "Unspent payments from the old version"). A refund is recorded under the same `spent/<signature>` key as `{ refunded: true, at, payer }`, so a refunded payment can never also be spent.
 
 A modified copy of the JavaScript can still grind without paying, because the private key is never sent to the server and the grinding happens in the browser. The same is true of anyone who opens the developer console, or who runs the CLI in this repository. The $1 buys the hosted page; the server's guarantees are that each payment is spent once, by one token, and that only the browser that paid is ever given a token for it.
 
@@ -53,7 +53,7 @@ npm ci
 npm test
 ```
 
-`npm test` in `web/` covers payment verification against a mock chain (wrong amount, wrong mint, wrong owner, failed and unfinalized transactions, one payment naming many references, somebody else's payment, RPC failures), concurrent spends (in memory, and through the real Blobs client against an atomic stand-in for hosted Blobs), the four functions end to end against a mock RPC node and Netlify's local Blobs server, the page's payment code with a stand-in document and wallet, key generation against RFC 8032, OpenSSL and `@solana/web3.js`, and the built output. It runs `vite build` itself. Netlify's local Blobs server, which `netlify dev` also uses, does not make conditional writes atomically, so concurrent spends against it can all succeed: it shows the protocol, not single-spend.
+`npm test` in `web/` covers payment verification against a mock chain (wrong amount, wrong mint, wrong owner, failed and unfinalized transactions, one payment naming many references, somebody else's payment, RPC failures), concurrent spends (in memory, and through the real Blobs client against an atomic stand-in for hosted Blobs), the four functions end to end against a mock RPC node and Netlify's local Blobs server, the page's payment code with a stand-in document and wallet, key generation against RFC 8032, OpenSSL and `@solana/web3.js`, and the built output. It runs `vite build` itself. Every test has a 60 second limit (`--test-timeout` in `web/package.json`), so a hang fails the run instead of stalling it. `.github/workflows/test.yml` runs the same commands on Node 22 for every push and pull request, with read-only repository access and no secrets. Netlify's local Blobs server, which `netlify dev` also uses, does not make conditional writes atomically, so concurrent spends against it can all succeed: it shows the protocol, not single-spend.
 
 `npm run build` writes `dist/_headers` from `web/src/headers.js`. That file is the only place response headers are defined. The build fails if a published page contains inline script or style, or if it cannot find exactly one grind worker to write a rule for.
 
@@ -77,14 +77,7 @@ The live site runs `34623f1`. Do these before this version goes live, in this or
 
 1. **PAY_TO_ADDRESS.** Site configuration → Environment variables. It must be unset, or exactly `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp` (surrounding spaces are allowed). Any other value stops every payment as soon as this version is live. If it names another wallet, payments made to that wallet and not yet redeemed cannot be redeemed after the switch: let them be redeemed first, or refund them. A variable changed in the UI reaches the functions only after a redeploy.
 2. **Build environment.** No variable that runs code during the build is set: `NODE_OPTIONS`, `NPM_CONFIG_*`, or anything else you did not add on purpose. Those can change the address compiled into the page and the functions.
-3. **Unspent payments from the old version.** The old version stored `reference → { status: "paid", signature }` at the top level of the Blobs store `grind-payments` and handed a token to such a record at any time. This version cannot redeem them. List them and refund or honour each one:
-
-   ```bash
-   netlify blobs:list grind-payments --directories   # the old references, plus the spent/ directory this version writes
-   netlify blobs:get grind-payments <reference>
-   ```
-
-   A record whose `status` is `paid` is a payment that was verified. Look up its `signature` on a block explorer to find the paying wallet, and refund 1.00 USDC to it unless the customer was given their grind. Keep the records afterwards. Customers whose browser still holds the old reference see it on the page with how to ask for a refund.
+3. **The old records.** Do not delete the Blobs store `grind-payments` or anything in it. The old version's records (`reference → { status, signature }` at the top level) are what tells, after the switch, which old payments were used. Listing the old payments that are owed a refund happens **after** publishing, not now: see "Unspent payments from the old version". A list taken before the switch would miss every payment made until the switch, and every customer the old version never wrote a record for.
 
 ## Check a deploy before it takes payments
 
@@ -119,7 +112,110 @@ Then pay once from a wallet other than the payee `crimeK…` (`PAY_TO`), on the 
 - The match shows the address and "Private Key: hidden". Clicking that line reveals the key and starts the 60 second countdown.
 - Reloading the page and reaching the payment step asks for a new payment; the spent payment is not offered again.
 
-Deploying replaces the page and the functions together. Switching from `34623f1`: a tab opened before the deploy keeps the old page, whose function URLs (`/.netlify/functions/`) are gone, so nobody pays through it. Every payment made under the old version and never spent, not only one in flight at the moment of the deploy, cannot be redeemed afterwards; step 3 of "Before publishing this version" lists them. If someone reports one, refund the 1.00 USDC to the sending wallet. Later deploys keep the `/api/` paths, so an old tab keeps talking to the new functions; if the payee changed, it refuses to pay until reloaded.
+Deploying replaces the page and the functions together. Switching from `34623f1`: a tab opened before the deploy keeps the old page, whose function URLs (`/.netlify/functions/`) are gone, so nobody pays through it. Every payment made under the old version and never spent, not only one in flight at the moment of the deploy, cannot be redeemed afterwards; "Unspent payments from the old version" lists them from the chain once this version is live, and refunds them. If someone reports one, "Refund requests" handles it. Later deploys keep the `/api/` paths, so an old tab keeps talking to the new functions; if the payee changed, it refuses to pay until reloaded.
+
+## Refund requests
+
+Customers ask for a refund by opening an issue on the GitHub repository and quoting what the page showed them: the payment's reference and, if the page knew it, its transaction signature. Everything in such an issue is public anyway. Never ask a customer for anything secret, and never ask for or show the payment claim (`vg-pay-claim`); a refund needs none of it.
+
+Refunds are handled with `web/scripts/payments.mjs`, a tool you run on your own computer. It is not part of the site and is never deployed. It reads the payment from the chain and the ledger from Netlify Blobs, and the only thing it writes is a refund mark. It holds no key and moves no money: you send the refund yourself, from the payee wallet.
+
+Use it only once this version is published. The old functions do not read the refund mark.
+
+### One-time setup
+
+1. Node.js 22.12 or newer, and the repository:
+
+   ```bash
+   git clone https://github.com/DoradoDevs/solana-vanity-address-generator.git
+   cd solana-vanity-address-generator/web
+   npm ci
+   ```
+
+2. A Netlify personal access token and the site ID. Either:
+   - With the Netlify CLI: `npm i -g netlify-cli`, then `netlify login` (it opens the browser). Run `netlify link` inside `web/` and pick this site; `netlify status` then prints the site ID (also called the project ID). The CLI keeps its own token; for this tool, create one as below.
+   - In the Netlify UI: User settings → Applications → Personal access tokens → New access token. Give it a short expiry. The site ID is under Site configuration → General → Site details → Site information ("Site ID" / "Project ID").
+
+   The token can read and write every site on your account. Keep it out of files, chat and shell history where you can (on most shells, a command typed with a leading space is not saved), and revoke it when you are done.
+
+3. A Solana mainnet RPC URL. The one in the Netlify UI (`SOLANA_RPC_URL`) works.
+
+4. In the terminal you will run the tool from:
+
+   ```bash
+   export SOLANA_RPC_URL='https://…'
+   export NETLIFY_SITE_ID='…'
+   export NETLIFY_AUTH_TOKEN='…'
+   ```
+
+   On Windows PowerShell: `$env:SOLANA_RPC_URL = '…'`, and the same for the other two.
+
+The tool never prints the token or any part of the RPC URL, error messages included. If a variable is missing it names it and stops.
+
+### Find the transaction
+
+If the issue quotes a signature (88 or so characters), use it. If it quotes only a reference (about 44 characters), open `https://solscan.io/account/<reference>`: the transactions listed there name it. The payment is the one that sent 1 USDC to `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp`. Copy its signature. If several did, check each.
+
+### Check, mark, send: in that order
+
+1. **Check.**
+
+   ```bash
+   node scripts/payments.mjs check <signature>
+   ```
+
+   It prints whether the transaction is finalized and succeeded, whether it paid exactly 1.00 USDC to the payee, the wallet that paid, its time, the ledger's records for it, and one verdict:
+
+   | Verdict | Meaning | What to do |
+   |---|---|---|
+   | `REFUNDABLE` | A payment nothing has used, at least 24 hours old. | Go on to step 2. |
+   | `USED` | It unlocked a grind (in this version, or the old one). | No refund. Reply that the payment was used, and when. |
+   | `REFUNDED` | Already marked refunded. | Do not send again. Check the payee wallet's history for the refund to that wallet; if it is not there, the mark was made but the money never sent, so send it now. |
+   | `NOT_A_PAYMENT` | Not a finalized, successful transfer of exactly 1.00 USDC to the payee. | No refund through this tool. A transaction that is not final yet says this too: check again in a minute. |
+   | `TOO_RECENT` | Unspent, but paid less than 24 hours ago. | Wait until the time it prints, then check again. |
+   | `UNCLEAR` | It paid, but the tool cannot settle it: no single wallet paid exactly 1.00 USDC, the chain gave no time for it, or the ledger holds a record under one of its accounts that the old version could not have written. | Look at it by hand. The tool will not mark it. |
+
+2. **Mark.**
+
+   ```bash
+   node scripts/payments.mjs mark-refunded <signature>
+   ```
+
+   It runs the same check again and refuses unless the verdict is `REFUNDABLE`. Then it writes `spent/<signature>` = `{ refunded: true, at, payer }` with the same conditional write that spends a payment for a grind, and prints the wallet to refund. If anything spent the payment between the check and the write, the write fails and nothing is marked: run check again. If the command stops with an error from the ledger, the mark may or may not have been written: run check before sending anything.
+
+3. **Send** exactly 1.00 USDC from the payee wallet `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp` to the wallet `mark-refunded` printed, as an ordinary USDC transfer to that wallet address. Then reply on the issue with the refund's transaction signature and close it.
+
+**Why this order.** Once marked, `/api/verify` and `/api/consume` answer 409 "refunded" for that payment, so it can no longer unlock a grind. Marking first means a payment can never be both refunded and used: if the customer's page spends it first, the mark fails and you send nothing; if the mark lands first, the page is refused. Sending first and marking afterwards would leave a window where the customer gets the 1.00 USDC back and the grind.
+
+**Why anyone may ask, and why 24 hours.** The refund only ever goes to the wallet whose USDC paid, as read from the transaction, never to an address the person asking names. So a stranger who copies a signature off the chain cannot gain anything by asking, and there is no need to make customers prove who they are (which would mean asking for a secret, or a signed message most customers cannot produce). The one thing a stranger could do is get somebody else's payment refunded while its owner still meant to use it. The money then goes back to the owner, so nothing is lost, but they lose the grind they came for. The 24 hour wait (`REFUND_MIN_AGE_MS` in the tool) gives a customer whose page is still waiting on the payment time to use it first. A customer who paid and gave up can always be told to wait a day.
+
+The customer's SOL network fee is not refunded; the tool only covers the 1.00 USDC.
+
+## Unspent payments from the old version
+
+The version before this one (`34623f1`) found a payment by a random reference, wrote `reference → { status: "paid", signature }` to the Blobs store `grind-payments` when its verify succeeded, and changed it to `status: "consumed"` when the grind started. This version cannot redeem any of those payments: its references come from a claim the old page never had. So every old payment that never unlocked a grind is owed a refund.
+
+The ledger is not the list. The old version wrote a record only after its verify succeeded, so a customer whose page stopped on "No payment was found", or who closed the tab before the check finished, has no record at all, though their 1.00 USDC arrived. The tool therefore reads the list from the chain (every transaction on the payee's USDC account) and uses the ledger only to tell which were used.
+
+Run it **after** this version is published, not before. Until the switch the old functions are live: they can still verify and spend old payments, they do not read refund marks, and a list taken before the switch misses payments made after it. Once the new version is live, the old page's function URLs are gone and nothing more is added to the old list.
+
+1. Note the publish time: Deploys → the deploy that published this version → its "Published" time. Write it as an ISO time with the zone, for example `2026-11-20T15:04:05Z`.
+
+2. Set up the shell as in "Refund requests", then:
+
+   ```bash
+   node scripts/payments.mjs old-payments --until 2026-11-20T15:04:05Z
+   ```
+
+   `--until` is the publish time: payments made at or after it belong to this version and are left out. The tool refuses a time in the future. Add `--since <ISO time>` to stop at an earlier time (for example the first deploy that took payments); without it the tool walks back through the payee account's whole history, which can take a while.
+
+   It prints one line per payment that is neither used nor already refunded: signature, time, paying wallet, the old record's status (`paid`: verified but never used; `none`: never verified; `unreadable`: see `UNCLEAR`), and the verdict. It ends with how many were left out as used or refunded. Refunds sent from the payee, failed transactions and transfers of other amounts are not payments and are not listed.
+
+3. For each listed payment, run `mark-refunded <signature>` and send 1.00 USDC to the wallet it prints, exactly as in "Refund requests". Payments from the last 24 hours before the switch are listed as `TOO_RECENT`: mark them the next day. `UNCLEAR` ones need a look by hand.
+
+4. Run `old-payments` again with the same `--until`. Everything you refunded is now counted as already refunded; the list should hold only what you chose to leave.
+
+Keep the old records in the store: they are what shows which old payments were used. A payment the old page sent in the last seconds before the switch can land just after it and is then not listed; if its customer asks, "Refund requests" handles it.
 
 ## Domain vanitygrinder.com
 
@@ -137,7 +233,8 @@ Use the values in the Netlify UI if they differ. Wait until the domain shows a c
 ## Owner checklist
 
 - [ ] `SOLANA_RPC_URL` and `UNLOCK_SECRET` are set in the Netlify UI and are not in git.
-- [ ] The steps in "Before publishing this version" are done: `PAY_TO_ADDRESS` checked, no build-affecting variables, old `status: "paid"` records refunded or honoured and kept.
+- [ ] The steps in "Before publishing this version" are done: `PAY_TO_ADDRESS` checked, no build-affecting variables, the old records kept.
+- [ ] After publishing: `old-payments --until <publish time>` run, every listed payment marked and refunded (the `TOO_RECENT` ones the next day), and run again to confirm ("Unspent payments from the old version").
 - [ ] The built bundle pins the payee: `grep -l crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp web/dist/assets/index-*.js` after `npm run build`, and the same address in the deployed `$SITE/$MAIN`.
 - [ ] `PAY_TO_ADDRESS` is unset, or set to exactly `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp` (`PAY_TO` in `shared/payment.js`). `curl -s $SITE/api/quote` returns that address, not a 503.
 - [ ] `cd web && npm ci && npm test && npm run build` and `cd cli && npm ci && npm test` succeed.

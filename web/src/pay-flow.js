@@ -7,11 +7,12 @@
  * claim. The claim is saved before the wallet is asked to sign, so a payment
  * survives a reload, a closed tab, or a wallet that never answers.
  *
- * While a claim is saved and unresolved, no second payment is started.
+ * While a claim is saved and unresolved, no second payment is started, and
+ * an unlock token is only ever spent for the claim it was issued for.
  */
 import { decodeBase58, encodeBase58 } from "../../shared/base58.js";
 import { classifyWalletError } from "../../shared/pay-copy.js";
-import { checkPreparedTransfer } from "./transfer-check.js";
+import { checkPreparedTransfer, referenceOf } from "./transfer-check.js";
 
 export const CLAIM_KEY = "vg-pay-claim";
 
@@ -21,6 +22,21 @@ export const CLAIM_KEY = "vg-pay-claim";
  * the customer is shown it, with how to get a refund, until they dismiss it.
  */
 export const RETIRED_REF_KEY = "vg-pay-ref";
+
+/**
+ * Payments this browser gave up, or whose own transaction paid something
+ * other than exactly 1.00 USDC: their reference (and signature, when known),
+ * which is what a refund request quotes. Kept until the customer hides each.
+ */
+export const REFUND_NOTES_KEY = "vg-pay-refunds";
+
+/** The browser-wide lock a spend holds, so one payment reaches one grind across tabs. */
+export const SPEND_LOCK = "vg-pay-spend";
+
+/** Without Web Locks: how long a spend's lease in storage lasts, and how often a waiting tab looks again. */
+export const LEASE_MS = 120_000;
+const LEASE_POLL_MS = 250;
+const LEASE_SETTLE_MS = 50;
 
 export const POLL_MS = 3_000;
 export const MAX_BACKOFF_MS = 15_000;
@@ -83,9 +99,46 @@ function abortableSleep(ms, signal) {
 }
 
 /**
+ * Run `fn` holding the browser-wide lock `name`, so two tabs never spend at
+ * once. Web Locks where the browser has them: the lock goes with the tab, so
+ * a tab closed mid-spend frees it at once. Otherwise a lease in storage,
+ * which a tab closed mid-spend holds for at most LEASE_MS.
+ */
+function storageLock(storage, { now, sleep, random }) {
+  return async (name, fn) => {
+    const key = `${name}-lease`;
+    const owner = encodeBase58(random(16));
+    const read = () => {
+      try {
+        return JSON.parse(storage.getItem(key) || "null");
+      } catch {
+        return null;
+      }
+    };
+    for (;;) {
+      const lease = read();
+      if (lease && lease.owner !== owner && Number.isFinite(lease.until) && lease.until > now()) {
+        await sleep(LEASE_POLL_MS);
+        continue;
+      }
+      storage.setItem(key, JSON.stringify({ owner, until: now() + LEASE_MS }));
+      // Another tab may have written its own lease at the same moment: the last write holds it.
+      await sleep(LEASE_SETTLE_MS);
+      if (read()?.owner === owner) break;
+    }
+    try {
+      return await fn();
+    } finally {
+      if (read()?.owner === owner) storage.removeItem(key);
+    }
+  };
+}
+
+/**
  * @param {object} deps
  * @param {{ getItem(k: string): string | null, setItem(k: string, v: string): void, removeItem(k: string): void }} deps.storage
  * @param {(name: string, body: object) => Promise<{ status: number, data: any }>} deps.post  rejects when the request never got an answer
+ * @param {{ request(name: string, fn: () => Promise<any>): Promise<any> } | null} [deps.locks]  Web Locks; null uses a lease in storage
  */
 export function createPayFlow({
   storage,
@@ -93,7 +146,10 @@ export function createPayFlow({
   now = Date.now,
   sleep = abortableSleep,
   random = (bytes) => crypto.getRandomValues(new Uint8Array(bytes)),
+  locks = globalThis.navigator?.locks ?? null,
 }) {
+  const withLock = locks ? (name, fn) => locks.request(name, () => fn()) : storageLock(storage, { now, sleep, random });
+
   /** The saved attempt, or null. Read from storage every time so two tabs agree. */
   function pending() {
     let record;
@@ -112,11 +168,12 @@ export function createPayFlow({
       walletError: record.walletError === true,
       token,
       tokenExpiresAt: token && Number.isFinite(record.tokenExpiresAt) ? record.tokenExpiresAt : null,
+      cursor: savedSignature(record.cursor),
     };
   }
 
   /** Write the saved attempt, keeping only the fields that are set. */
-  function save({ claim, createdAt, sentAt = null, signature, walletError, token, tokenExpiresAt }) {
+  function save({ claim, createdAt, sentAt = null, signature, walletError, token, tokenExpiresAt, cursor }) {
     storage.setItem(
       CLAIM_KEY,
       JSON.stringify({
@@ -126,13 +183,28 @@ export function createPayFlow({
         ...(signature ? { signature } : {}),
         ...(walletError ? { walletError: true } : {}),
         ...(token ? { token, ...(Number.isFinite(tokenExpiresAt) ? { tokenExpiresAt } : {}) } : {}),
+        ...(cursor ? { cursor } : {}),
       })
     );
   }
 
-  /** Clear the saved attempt. Given a claim, only if that is still the one saved: another tab may have replaced it. */
+  /**
+   * Change fields of the saved attempt, only if it is still `claim`: another
+   * tab may have replaced it. Returns whether it wrote.
+   */
+  function update(claim, fields) {
+    const record = pending();
+    if (!record || record.claim !== claim) return false;
+    save({ ...record, ...fields });
+    return true;
+  }
+
+  /**
+   * Clear the saved attempt, only if it is still `claim`: another tab may
+   * have replaced it. Without a claim, nothing is cleared.
+   */
   function forget(claim) {
-    if (claim !== undefined && pending()?.claim !== claim) return;
+    if (claim === undefined || pending()?.claim !== claim) return;
     storage.removeItem(CLAIM_KEY);
   }
 
@@ -218,7 +290,7 @@ export function createPayFlow({
     } catch (error) {
       const kind = classifyWalletError(error);
       if (kind) {
-        // Declined, refused at preflight, or short of funds: the wallet sent nothing.
+        // Declined before signing, or short of what the transfer needs: no USDC can have moved.
         forget(claim);
         return { outcome: "declined", kind };
       }
@@ -230,16 +302,48 @@ export function createPayFlow({
     return { outcome: "sent", claim };
   }
 
+  // ── What the customer is told to quote for a refund, kept until they hide it ──
+
+  /** @returns {{ reference: string, signature?: string, why: "abandoned" | "rejected", at: number }[]} */
+  function refundNotes() {
+    let list;
+    try {
+      list = JSON.parse(storage.getItem(REFUND_NOTES_KEY) || "[]");
+    } catch {
+      list = [];
+    }
+    return Array.isArray(list) ? list.filter((note) => typeof note?.reference === "string" && note.reference.length > 0) : [];
+  }
+
+  async function noteRefund(record, why) {
+    const reference = await referenceOf(record.claim);
+    const notes = refundNotes().filter((note) => note.reference !== reference);
+    notes.push({ reference, ...(record.signature ? { signature: record.signature } : {}), why, at: now() });
+    storage.setItem(REFUND_NOTES_KEY, JSON.stringify(notes));
+    return reference;
+  }
+
+  function dismissRefund(reference) {
+    const notes = refundNotes().filter((note) => note.reference !== reference);
+    if (notes.length === 0) storage.removeItem(REFUND_NOTES_KEY);
+    else storage.setItem(REFUND_NOTES_KEY, JSON.stringify(notes));
+  }
+
   /**
    * Give up the saved attempt at the customer's request, which the page only
-   * offers after ABANDON_OFFER_AFTER_MS. Returns what was given up, so the
-   * page can show what the customer needs to ask for a refund.
+   * offers after ABANDON_OFFER_AFTER_MS. Its reference (never the claim) is
+   * kept in the refund notes first, so what the customer needs to ask for a
+   * refund survives a reload and later payments. Returns the note, or null if
+   * the attempt is no longer the saved one.
    */
-  function abandon(claim) {
+  async function abandon(claim) {
     const record = pending();
     if (!record || record.claim !== claim) return null;
+    const reference = await referenceOf(claim);
+    if (pending()?.claim !== claim) return null;
+    await noteRefund(record, "abandoned");
     forget(claim);
-    return record;
+    return { reference, signature: record.signature };
   }
 
   /** The reference saved by the version of this page before claims, or null. */
@@ -258,12 +362,16 @@ export function createPayFlow({
    * reason; anything else (a proxy error page, a rate limit, a dropped
    * connection) is "unavailable" and decides nothing.
    */
-  async function check() {
-    const record = pending();
+  async function check(record = pending()) {
     if (!record) return { state: "none" };
+    const body = {
+      claim: record.claim,
+      ...(record.signature ? { signature: record.signature } : {}),
+      ...(record.cursor ? { cursor: record.cursor } : {}),
+    };
     let response;
     try {
-      response = await post("verify", record.signature ? { claim: record.claim, signature: record.signature } : { claim: record.claim });
+      response = await post("verify", body);
     } catch {
       return { state: "unavailable" };
     }
@@ -271,28 +379,41 @@ export function createPayFlow({
     const reason = data?.reason;
     const message = typeof data?.message === "string" ? data.message : "";
     if (status === 200 && typeof data?.token === "string") {
-      return { state: "paid", token: data.token, expiresAt: Number.isFinite(data.expiresAt) ? data.expiresAt : null };
+      return {
+        state: "paid",
+        claim: record.claim,
+        token: data.token,
+        expiresAt: Number.isFinite(data.expiresAt) ? data.expiresAt : null,
+      };
     }
     if (status === 202 && reason === "pending") return { state: "pending" };
     if (status === 202 && reason === "not_found") return { state: "unseen" };
-    if (status === 409 && reason === "reused") return { state: "used", message };
+    if (status === 202 && reason === "searching" && savedSignature(data?.cursor)) {
+      // A long history: the next check carries on from here, even after a reload.
+      update(record.claim, { cursor: data.cursor });
+      return { state: "searching" };
+    }
+    if (status === 409 && (reason === "reused" || reason === "refunded")) return { state: "used", reason, message };
     if (status === 400 && typeof reason === "string") return { state: "rejected", reason, message };
     return { state: "unavailable" };
   }
 
   /**
    * Follow the saved attempt until it resolves.
-   * Outcomes: "paid" (with a token), "gone" (never reached the chain),
-   * "used", "rejected", "stopped" (the caller aborted; the claim is kept),
-   * "none" (nothing saved). Every outcome except "paid" and "stopped"
+   * Outcomes: "paid" (with the claim and a token), "gone" (never reached the
+   * chain), "used", "rejected", "stopped" (the caller aborted; the claim is
+   * kept), "none" (nothing saved). Every outcome except "paid" and "stopped"
    * clears the claim, because nothing more can come of it.
    *
-   * An attempt that holds a saved token was paid, and its spend had begun
-   * when the page went away: that token is the answer, with no request.
-   * unlock() replays it, and asks verify again only if it is stale.
+   * Every look goes to verify, even when the attempt holds a saved token, so
+   * the give-up offer and the server's verdicts always apply. A saved token
+   * means this browser was paid and began to spend; then:
+   * - "used" is most likely that spend, whose answer was lost: the saved
+   *   token is returned, and unlock() replays it, which settles whose it was;
+   * - "not found" (a node without the history) is never given up on its own.
    *
    * onState(state, info) after each check that settles nothing:
-   *   info.giveUpIn       ms left before an unseen payment is given up
+   *   info.giveUpIn       ms left before an unseen payment is given up; null when it never will be
    *   info.walletError    the wallet reported an error nobody recognises
    *   info.signature      the wallet said which transaction it sent
    *   info.canAbandon     the customer may now give the attempt up
@@ -304,52 +425,60 @@ export function createPayFlow({
       if (signal?.aborted) return { outcome: "stopped" };
       const record = pending();
       if (!record) return { outcome: "none" };
-      if (record.token) return { outcome: "paid", token: record.token, expiresAt: record.tokenExpiresAt };
-      const result = await check();
+      const result = await check(record);
       if (signal?.aborted) return { outcome: "stopped" };
+      const wasPaid = record.token !== null;
+      const since = record.sentAt ?? record.createdAt;
       switch (result.state) {
         case "none":
           return { outcome: "none" };
         case "paid":
-          return { outcome: "paid", token: result.token, expiresAt: result.expiresAt };
+          return { outcome: "paid", claim: record.claim, token: result.token, expiresAt: result.expiresAt };
         case "used":
-          forget();
-          return { outcome: "used", message: result.message };
+          if (wasPaid && result.reason === "reused") {
+            return { outcome: "paid", claim: record.claim, token: record.token, expiresAt: record.tokenExpiresAt };
+          }
+          forget(record.claim);
+          return { outcome: "used", reason: result.reason, message: result.message };
         case "rejected":
-          forget();
+          // The claim's own transaction, final, moved USDC but not exactly 1.00 to the payee
+          // (after a payee change, say): the customer may be owed a refund, so its reference is kept.
+          if (result.reason !== "failed") await noteRefund(record, "rejected");
+          forget(record.claim);
           return { outcome: "rejected", reason: result.reason, message: result.message };
         case "unseen":
-          if (now() - (record.sentAt ?? record.createdAt) > GIVE_UP_AFTER_MS) {
-            forget();
+          if (!wasPaid && now() - since > GIVE_UP_AFTER_MS) {
+            forget(record.claim);
             return { outcome: "gone" };
           }
           wait = POLL_MS;
           break;
         case "pending":
+        case "searching":
           wait = POLL_MS;
           break;
         default:
           // The service not answering is never a reason to give up on a payment.
           wait = Math.min(wait * 2, MAX_BACKOFF_MS);
       }
-      const since = record.sentAt ?? record.createdAt;
       onState(result.state, {
         claim: record.claim,
-        giveUpIn: Math.max(0, since + GIVE_UP_AFTER_MS - now()),
+        giveUpIn: wasPaid ? null : Math.max(0, since + GIVE_UP_AFTER_MS - now()),
         walletError: record.walletError,
         signature: record.signature !== null,
-        canAbandon: result.state !== "unseen" && now() - since >= ABANDON_OFFER_AFTER_MS,
+        canAbandon: (result.state !== "unseen" || wasPaid) && now() - since >= ABANDON_OFFER_AFTER_MS,
       });
       await sleep(wait, signal);
     }
   }
 
   /**
-   * Spend an unlock token. The same token is safe to send again, so a lost
-   * response is retried rather than treated as a failure.
-   * @returns {Promise<{ ok: true } | { ok: false, reason: "reused" | "expired" | "bad" | "unavailable", message?: string }>}
+   * Send an unlock token to consume. The same token is safe to send again, so
+   * a lost response is retried rather than treated as a failure. On a verdict
+   * the attempt is cleared, if it is still `claim`.
+   * @returns {Promise<{ ok: true } | { ok: false, reason: "reused" | "refunded" | "expired" | "bad" | "unavailable", message?: string }>}
    */
-  async function spend(token) {
+  async function spend(token, claim) {
     let wait = 1_000;
     for (let attempt = 0; attempt < SPEND_ATTEMPTS; attempt++) {
       let response = null;
@@ -361,11 +490,11 @@ export function createPayFlow({
       const reason = response?.data?.reason;
       const message = typeof response?.data?.message === "string" ? response.data.message : undefined;
       if (response?.status === 200 && response.data?.ok === true) {
-        forget();
+        forget(claim);
         return { ok: true };
       }
-      if (response?.status === 409 && reason === "reused") {
-        forget();
+      if (response?.status === 409 && (reason === "reused" || reason === "refunded")) {
+        forget(claim);
         return { ok: false, reason, message };
       }
       if ((response?.status === 401 && reason === "expired") || (response?.status === 400 && reason === "bad")) {
@@ -377,46 +506,71 @@ export function createPayFlow({
     return { ok: false, reason: "unavailable" };
   }
 
-  /** Keep the token with the attempt it unlocks, so a reload can replay it. */
-  function holdToken(token, expiresAt) {
-    const record = pending();
-    if (!record || record.token === token) return;
-    save({ ...record, token, tokenExpiresAt: expiresAt });
-  }
-
   /**
-   * Spend the saved attempt's unlock for one grind. The token is saved with
-   * the claim before /api/consume is called, so a spend whose answer is lost
-   * survives a reload: the token that won is answered "ok" every time it is
-   * sent again. A token saved by an earlier visit is replayed before a new
-   * one is used. Only if the token is stale (expired, or signed with a secret
-   * since changed) does verify issue a fresh one.
-   * @param {{ token: string, expiresAt?: number | null }} [fresh] the token this visit was given
+   * Spend the unlock for one grind. `paid` is what watch() returned: the
+   * claim the token was issued for, and the token.
+   *
+   * One spend runs at a time in this browser (the "vg-pay-spend" lock), and
+   * each starts from the saved attempt, never from what a tab remembers:
+   * - If the saved attempt is not `paid.claim`, that payment was spent here
+   *   or in another tab, given up, or replaced. Nothing is spent ("elsewhere").
+   * - The token is saved with its claim before consume is called, so a spend
+   *   whose answer is lost survives a reload. A token saved by an earlier
+   *   spend of this claim is replayed before any other: the token that won is
+   *   answered "ok" every time, and any other is refused once one has won.
+   * - Only a token that comes back stale (expired, or not the winner) sends
+   *   the page to verify for a fresh one.
+   * @param {{ claim: string, token: string, expiresAt?: number | null }} paid
+   * @returns {Promise<{ ok: true } | { ok: false, reason: "reused" | "refunded" | "elsewhere" | "rejected" | "unavailable", message?: string }>}
    */
-  async function unlock(fresh) {
-    const record = pending();
-    const saved = record?.token ? { token: record.token, expiresAt: record.tokenExpiresAt } : null;
-    const first = saved ?? fresh;
-    if (!first?.token) return { ok: false, reason: "unavailable" };
-    holdToken(first.token, first.expiresAt);
-    let spent = await spend(first.token);
-    if (!spent.ok && (spent.reason === "expired" || spent.reason === "bad")) {
-      // The payment is still there and unspent; only the token was stale.
-      const again = await check();
+  async function unlock(paid) {
+    if (typeof paid?.claim !== "string" || typeof paid.token !== "string") return { ok: false, reason: "unavailable" };
+    const { claim } = paid;
+    return withLock(SPEND_LOCK, async () => {
+      const record = pending();
+      if (!record || record.claim !== claim) return { ok: false, reason: "elsewhere" };
+      const first = record.token ? { token: record.token, expiresAt: record.tokenExpiresAt } : paid;
+      if (!update(claim, { token: first.token, tokenExpiresAt: first.expiresAt })) return { ok: false, reason: "elsewhere" };
+      const spent = await spend(first.token, claim);
+      if (spent.ok || (spent.reason !== "expired" && spent.reason !== "bad")) return spent;
+
+      // That token can no longer spend. The payment may still be unspent: ask verify.
+      const current = pending();
+      if (!current || current.claim !== claim) return { ok: false, reason: "elsewhere" };
+      const again = await check(current);
       if (again.state === "paid") {
-        holdToken(again.token, again.expiresAt);
-        spent = await spend(again.token);
-      } else if (again.state === "used") {
-        forget();
-        spent = { ok: false, reason: "reused", message: again.message };
-      } else {
-        spent = { ok: false, reason: "unavailable" };
+        if (!update(claim, { token: again.token, tokenExpiresAt: again.expiresAt })) return { ok: false, reason: "elsewhere" };
+        return spend(again.token, claim);
       }
-    }
-    return spent;
+      if (again.state === "used") {
+        forget(claim);
+        return { ok: false, reason: again.reason, message: again.message };
+      }
+      if (again.state === "rejected") {
+        if (again.reason !== "failed") await noteRefund(current, "rejected");
+        forget(claim);
+        return { ok: false, reason: "rejected", message: again.message };
+      }
+      return { ok: false, reason: "unavailable" };
+    });
   }
 
-  return { pending, begin, markSent, forget, check, watch, spend, pay, unlock, abandon, retiredReference, dismissRetired };
+  return {
+    pending,
+    begin,
+    markSent,
+    forget,
+    check,
+    watch,
+    spend,
+    pay,
+    unlock,
+    abandon,
+    refundNotes,
+    dismissRefund,
+    retiredReference,
+    dismissRetired,
+  };
 }
 
 /** localStorage when the browser allows writing to it, otherwise memory for the life of the page. */

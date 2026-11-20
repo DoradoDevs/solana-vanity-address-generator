@@ -7,6 +7,7 @@ export const config = { path: "/api/consume" };
 
 const MESSAGES = {
   reused: "That payment was already used for a grind.",
+  refunded: "That payment was refunded to the wallet that paid it, so it cannot unlock a grind.",
   expired: "The unlock expired. Checking the payment again.",
   bad: "The unlock token is not valid.",
   config: "Payment verification is not configured.",

@@ -5,17 +5,24 @@ import { randomBytes } from "node:crypto";
 import { decodeBase58, encodeBase58 } from "../../shared/base58.js";
 import { PAY_ERRORS } from "../../shared/pay-copy.js";
 import { referenceForClaim } from "../netlify/functions/lib/claim.js";
+import { memoryStore } from "../netlify/functions/lib/store.js";
+import { signUnlockToken } from "../netlify/functions/lib/token.js";
 import { buildUnsignedTransaction } from "../netlify/functions/lib/tx.js";
-import { PAYER, PAY_TO, STRANGER } from "./helpers/chain.js";
+import { consumeUnlock } from "../netlify/functions/lib/verify.js";
+import { PAYER, PAY_TO, STRANGER, newSignature } from "./helpers/chain.js";
 import {
   ABANDON_OFFER_AFTER_MS,
   CLAIM_KEY,
   GIVE_UP_AFTER_MS,
+  LEASE_MS,
   MAX_BACKOFF_MS,
   POLL_MS,
+  REFUND_NOTES_KEY,
   RETIRED_REF_KEY,
+  SPEND_LOCK,
   createPayFlow,
 } from "../src/pay-flow.js";
+import { referenceOf } from "../src/transfer-check.js";
 
 function fakeStorage(initial = {}) {
   const map = new Map(Object.entries(initial));
@@ -26,6 +33,37 @@ function fakeStorage(initial = {}) {
     removeItem: (key) => void map.delete(key),
   };
 }
+
+/**
+ * Web Locks, as two tabs of one browser share them: one holder per name, the rest wait in turn.
+ * Every flow over the same storage gets the same locks.
+ */
+const browserLocks = new WeakMap();
+function locksFor(storage) {
+  if (!browserLocks.has(storage)) {
+    const tails = new Map();
+    browserLocks.set(storage, {
+      held: [],
+      request(name, fn) {
+        const run = (tails.get(name) ?? Promise.resolve()).then(async () => {
+          this.held.push(name);
+          try {
+            return await fn();
+          } finally {
+            this.held.pop();
+          }
+        });
+        tails.set(name, run.catch(() => {}));
+        return run;
+      },
+    });
+  }
+  return browserLocks.get(storage);
+}
+
+/** A fake sleep never blocks timers, and a flow that never settles fails here instead of hanging the suite. */
+const MAX_SLEEPS = 5_000;
+const yieldToTimers = () => new Promise((resolve) => setImmediate(resolve));
 
 const answers = {
   unseen: { status: 202, data: { ok: false, reason: "not_found" } },
@@ -42,7 +80,7 @@ const answers = {
 };
 
 /** A flow whose server replies with `script`, one entry per request, repeating the last. */
-function setup(script, { storage = fakeStorage(), start = 1_000_000 } = {}) {
+function setup(script, { storage = fakeStorage(), start = 1_000_000, locks = locksFor(storage) } = {}) {
   const clock = { now: start };
   const calls = [];
   const replies = [];
@@ -57,11 +95,13 @@ function setup(script, { storage = fakeStorage(), start = 1_000_000 } = {}) {
   };
   const sleep = async (ms) => {
     sleeps.push(ms);
+    if (sleeps.length > MAX_SLEEPS) throw new Error(`the flow never settled: ${MAX_SLEEPS} sleeps`);
     clock.now += ms;
+    await yieldToTimers();
   };
   let seed = 1;
   const random = (n) => Uint8Array.from({ length: n }, () => seed++ % 256);
-  const flow = createPayFlow({ storage, post, now: () => clock.now, sleep, random });
+  const flow = createPayFlow({ storage, post, now: () => clock.now, sleep, random, locks });
   return { flow, storage, clock, calls, replies, sleeps };
 }
 
@@ -79,6 +119,7 @@ test("a claim is 32 random bytes in Base58, saved before anything is sent", () =
     walletError: false,
     token: null,
     tokenExpiresAt: null,
+    cursor: null,
   });
 });
 
@@ -87,7 +128,11 @@ test("a second payment cannot be started while one is unresolved", () => {
   const claim = flow.begin();
   assert.throws(() => flow.begin(), /already pending/);
   assert.equal(flow.pending().claim, claim);
+  // Clearing names the attempt: without one, or with another, nothing is cleared.
   flow.forget();
+  flow.forget("another-claim");
+  assert.equal(flow.pending().claim, claim);
+  flow.forget(claim);
   assert.notEqual(flow.begin(), claim);
 });
 
@@ -98,7 +143,7 @@ test("a payment that is not visible yet is waited for, through finality, to the 
   flow.markSent();
   const states = [];
   const result = await flow.watch({ onState: (state) => states.push(state) });
-  assert.deepEqual(result, { outcome: "paid", token: "token-1", expiresAt: 1_600_000 });
+  assert.deepEqual(result, { outcome: "paid", claim, token: "token-1", expiresAt: 1_600_000 });
   assert.deepEqual(states, ["unseen", "unseen", "pending", "pending"]);
   assert.equal(calls.length, 5);
   assert.ok(calls.every((call) => call.name === "verify" && call.body.claim === claim));
@@ -124,6 +169,7 @@ test("the signature the wallet returned is saved with the claim and sent with ev
     walletError: false,
     token: null,
     tokenExpiresAt: null,
+    cursor: null,
   });
   assert.equal((await flow.watch()).outcome, "paid");
   assert.deepEqual(
@@ -135,7 +181,7 @@ test("the signature the wallet returned is saved with the claim and sent with ev
 test("a send reported for an attempt that another tab has since replaced leaves the new attempt alone", () => {
   const { flow, storage } = setup([answers.unseen]);
   const old = flow.begin();
-  flow.forget(); // another tab gave the old attempt up and started its own
+  flow.forget(old); // another tab gave the old attempt up and started its own
   const current = flow.begin();
   const before = storage.map.get(CLAIM_KEY);
   flow.markSent([{ signature: new Uint8Array(64).fill(7) }], old);
@@ -210,7 +256,11 @@ test("an outage longer than the give-up window does not drop a payment that is t
 
 test("a spent, failed or mismatched payment ends the attempt and clears it", async () => {
   for (const [answer, expected] of [
-    [answers.used, { outcome: "used", message: "That payment was already used for a grind." }],
+    [answers.used, { outcome: "used", reason: "reused", message: "That payment was already used for a grind." }],
+    [
+      { status: 409, data: { ok: false, reason: "refunded", message: "Refunded." } },
+      { outcome: "used", reason: "refunded", message: "Refunded." },
+    ],
     [answers.failed, { outcome: "rejected", reason: "failed", message: "" }],
     [answers.wrongAmount, { outcome: "rejected", reason: "wrong_amount", message: "" }],
   ]) {
@@ -254,7 +304,7 @@ test("a saved claim survives a reload, and a claim that was never sent ages from
     start: 1_000_000 + 30_000,
   });
   assert.equal(reloaded.flow.pending().claim, claim);
-  assert.deepEqual(await reloaded.flow.watch(), { outcome: "paid", token: "token-1", expiresAt: 1_600_000 });
+  assert.deepEqual(await reloaded.flow.watch(), { outcome: "paid", claim, token: "token-1", expiresAt: 1_600_000 });
 
   const abandoned = setup([answers.unseen]);
   abandoned.flow.begin();
@@ -299,8 +349,8 @@ test("damaged storage reads as nothing saved", () => {
 test("spending retries a lost response with the same token, then clears the claim", async () => {
   const ok = { status: 200, data: { ok: true } };
   const { flow, calls } = setup([answers.offline, answers.proxy502, ok]);
-  flow.begin();
-  assert.deepEqual(await flow.spend("token-1"), { ok: true });
+  const claim = flow.begin();
+  assert.deepEqual(await flow.spend("token-1", claim), { ok: true });
   assert.deepEqual(
     calls.map((call) => [call.name, call.body.token]),
     [["consume", "token-1"], ["consume", "token-1"], ["consume", "token-1"]]
@@ -310,9 +360,14 @@ test("spending retries a lost response with the same token, then clears the clai
 
 test("spending reports a used payment, an expired token, and an unreachable service apart", async () => {
   const used = setup([{ status: 409, data: { ok: false, reason: "reused", message: "Already used." } }]);
-  used.flow.begin();
-  assert.deepEqual(await used.flow.spend("t"), { ok: false, reason: "reused", message: "Already used." });
+  const usedClaim = used.flow.begin();
+  assert.deepEqual(await used.flow.spend("t", usedClaim), { ok: false, reason: "reused", message: "Already used." });
   assert.equal(used.flow.pending(), null);
+  // A verdict clears the claim it was for, never one another tab has saved since.
+  const other = setup([{ status: 409, data: { ok: false, reason: "reused" } }]);
+  const newer = other.flow.begin();
+  assert.equal((await other.flow.spend("t", "an-older-claim")).reason, "reused");
+  assert.equal(other.flow.pending().claim, newer);
 
   for (const [status, reason] of [[401, "expired"], [400, "bad"]]) {
     const stale = setup([{ status, data: { ok: false, reason } }]);
@@ -371,12 +426,11 @@ test("a 400 or 409 without its reason, from a proxy or the edge, keeps the claim
 
 const consumed = { status: 200, data: { ok: true } };
 
-test("the token is saved with the claim before consume is called, so a lost answer survives a reload", async () => {
+test("the token is saved with its claim before consume is called, and a reload replays it after asking verify", async () => {
   const first = setup([answers.offline]);
   const claim = first.flow.begin();
   first.flow.markSent();
   const posts = [];
-  const seen = setup([], { storage: first.storage });
   // Watch what storage holds at the moment consume is called.
   const flow = createPayFlow({
     storage: first.storage,
@@ -386,41 +440,58 @@ test("the token is saved with the claim before consume is called, so a lost answ
     },
     now: () => 1_000_000,
     sleep: async () => {},
+    locks: locksFor(first.storage),
   });
-  assert.deepEqual(await flow.unlock({ token: "token-1", expiresAt: 1_600_000 }), { ok: false, reason: "unavailable" });
+  assert.deepEqual(await flow.unlock({ claim, token: "token-1", expiresAt: 1_600_000 }), { ok: false, reason: "unavailable" });
   assert.equal(posts.length, 4);
   for (const post of posts) {
     assert.equal(post.name, "consume");
     assert.equal(post.body.token, "token-1");
+    assert.equal(post.saved.claim, claim);
     assert.equal(post.saved.token, "token-1");
     assert.equal(post.saved.tokenExpiresAt, 1_600_000);
   }
-  assert.equal(seen.flow.pending().claim, claim);
+  assert.equal(first.flow.pending().claim, claim);
 
-  // The page is reloaded. The saved token is the answer: no verify, and consume gets that same token.
-  const reloaded = setup([consumed], { storage: first.storage, start: 1_000_000 + 60 * 60_000 });
-  assert.deepEqual(await reloaded.flow.watch(), { outcome: "paid", token: "token-1", expiresAt: 1_600_000 });
-  assert.equal(reloaded.calls.length, 0);
-  assert.deepEqual(await reloaded.flow.unlock({ token: "token-1", expiresAt: 1_600_000 }), { ok: true });
-  assert.deepEqual(reloaded.calls, [{ name: "consume", body: { token: "token-1" } }]);
+  // The page is reloaded. The consume did land, so verify says the payment is spent: the
+  // saved token is what spent it, so it is handed back, and replaying it gets "ok".
+  const reloaded = setup([answers.used, consumed], { storage: first.storage, start: 1_000_000 + 60 * 60_000 });
+  assert.deepEqual(await reloaded.flow.watch(), { outcome: "paid", claim, token: "token-1", expiresAt: 1_600_000 });
+  assert.deepEqual(await reloaded.flow.unlock({ claim, token: "token-1", expiresAt: 1_600_000 }), { ok: true });
+  assert.deepEqual(
+    reloaded.calls.map((c) => [c.name, c.body.token]),
+    [["verify", undefined], ["consume", "token-1"]]
+  );
   assert.equal(reloaded.flow.pending(), null);
+
+  // The consume never landed: verify issues a fresh token, and the saved one is still sent first.
+  const again = setup([answers.offline]);
+  const unspent = again.flow.begin();
+  again.flow.markSent();
+  await again.flow.unlock({ claim: unspent, token: "token-1", expiresAt: 1_600_000 });
+  const later = setup([{ status: 200, data: { ok: true, token: "token-2", expiresAt: 9 } }, consumed], { storage: again.storage });
+  const watched = await later.flow.watch();
+  assert.deepEqual(watched, { outcome: "paid", claim: unspent, token: "token-2", expiresAt: 9 });
+  assert.deepEqual(await later.flow.unlock(watched), { ok: true });
+  assert.deepEqual(later.calls.at(-1), { name: "consume", body: { token: "token-1" } });
 });
 
 test("a saved token is replayed before a newer one, and verify is asked only when it comes back stale", async () => {
   // The saved token won an earlier spend whose answer was lost; a newer token would be refused as "reused".
+  const claim = "c".repeat(44);
   const storage = fakeStorage({
-    [CLAIM_KEY]: JSON.stringify({ claim: "c".repeat(44), createdAt: 1, sentAt: 2, token: "won", tokenExpiresAt: 5 }),
+    [CLAIM_KEY]: JSON.stringify({ claim, createdAt: 1, sentAt: 2, token: "won", tokenExpiresAt: 5 }),
   });
   const replay = setup([consumed], { storage });
-  assert.deepEqual(await replay.flow.unlock({ token: "newer", expiresAt: 9 }), { ok: true });
+  assert.deepEqual(await replay.flow.unlock({ claim, token: "newer", expiresAt: 9 }), { ok: true });
   assert.deepEqual(replay.calls.map((c) => c.body.token), ["won"]);
 
   for (const stale of [{ status: 401, data: { reason: "expired" } }, { status: 400, data: { reason: "bad" } }]) {
     const fresh = { status: 200, data: { ok: true, token: "fresh", expiresAt: 99 } };
     const { flow, calls, storage: saved } = setup([stale, fresh, consumed]);
-    flow.begin();
+    const mine = flow.begin();
     flow.markSent();
-    assert.deepEqual(await flow.unlock({ token: "old", expiresAt: 1 }), { ok: true });
+    assert.deepEqual(await flow.unlock({ claim: mine, token: "old", expiresAt: 1 }), { ok: true });
     assert.deepEqual(
       calls.map((c) => [c.name, c.body.token]),
       [["consume", "old"], ["verify", undefined], ["consume", "fresh"]]
@@ -428,11 +499,178 @@ test("a saved token is replayed before a newer one, and verify is asked only whe
     assert.equal(saved.map.has(CLAIM_KEY), false);
   }
 
-  // Stale, and verify then says the payment was spent: the attempt is over.
-  const used = setup([{ status: 401, data: { reason: "expired" } }, answers.used]);
-  used.flow.begin();
-  assert.equal((await used.flow.unlock({ token: "old" })).reason, "reused");
-  assert.equal(used.flow.pending(), null);
+  // Stale, and verify then says the payment was spent, or refunded: the attempt is over.
+  for (const [answer, reason] of [
+    [answers.used, "reused"],
+    [{ status: 409, data: { ok: false, reason: "refunded", message: "Refunded." } }, "refunded"],
+  ]) {
+    const used = setup([{ status: 401, data: { reason: "expired" } }, answer]);
+    const spentClaim = used.flow.begin();
+    assert.equal((await used.flow.unlock({ claim: spentClaim, token: "old" })).reason, reason);
+    assert.equal(used.flow.pending(), null);
+  }
+});
+
+test("a token is only ever spent for the claim it was issued for (two tabs, a stale token, a newer payment)", async () => {
+  // sim/two-tabs.mjs from the review: tab A holds T_A for C1 in memory. Tab B spends C1
+  // with its own T_B, then the customer pays again in tab B (C2, sent). Tab A then starts a grind.
+  const storage = fakeStorage();
+  const tabA = setup([{ status: 200, data: { ok: true, token: "T_A", expiresAt: 9e15 } }, { status: 409, data: { ok: false, reason: "reused" } }], { storage });
+  const tabB = setup([consumed], { storage });
+  const c1 = tabB.flow.begin();
+  tabB.flow.markSent(undefined, c1);
+  const paidA = await tabA.flow.watch();
+  assert.deepEqual(paidA, { outcome: "paid", claim: c1, token: "T_A", expiresAt: 9e15 });
+  assert.deepEqual(await tabB.flow.unlock({ claim: c1, token: "T_B", expiresAt: 9e15 }), { ok: true });
+  const c2 = tabB.flow.begin();
+  tabB.flow.markSent([{ signature: new Uint8Array(64).fill(5) }], c2);
+  const before = storage.map.get(CLAIM_KEY);
+
+  assert.deepEqual(await tabA.flow.unlock(paidA), { ok: false, reason: "elsewhere" });
+  // C2, a payment that was sent, is untouched, and tab A sent nothing to consume.
+  assert.equal(storage.map.get(CLAIM_KEY), before);
+  assert.deepEqual(tabA.calls.map((c) => c.name), ["verify"]);
+  // A token without the claim it was issued for spends nothing.
+  assert.deepEqual(await tabA.flow.unlock({ token: "T_A" }), { ok: false, reason: "unavailable" });
+  assert.equal(storage.map.get(CLAIM_KEY), before);
+});
+
+/** The real consume, ledger and tokens, behind a post() that can hold a request in flight. */
+function realServer() {
+  const secret = "s".repeat(64);
+  const ledger = memoryStore();
+  const signature = newSignature();
+  const issue = () => signUnlockToken({ signature, secret, now: 1_000_000 });
+  const oks = [];
+  const post = (tab, { hold } = {}) => async (name, body) => {
+    if (name !== "consume") throw new Error(`unexpected ${name}`);
+    if (hold) await hold;
+    const result = await consumeUnlock({ token: body.token, store: ledger, secret, now: 1_000_000 });
+    if (result.ok) oks.push(tab);
+    return { status: result.status, data: { ok: result.ok, reason: result.reason } };
+  };
+  return { issue, post, oks, ledger };
+}
+
+test("one payment reaches one grind across tabs: a second tab never replays the token of a spend in flight", async () => {
+  for (const locks of ["web locks", "lease in storage"]) {
+    // sim/replay.mjs from the review: tab B's spend is in flight when tab A starts a grind.
+    const storage = fakeStorage();
+    const server = realServer();
+    const flowLocks = locks === "web locks" ? locksFor(storage) : null;
+    let release;
+    const hold = new Promise((resolve) => (release = resolve));
+    const options = { storage, now: () => 1_000_000, sleep: yieldToTimers, locks: flowLocks };
+    const B = createPayFlow({ ...options, post: server.post("B", { hold }) });
+    const A = createPayFlow({ ...options, post: server.post("A") });
+    const claim = B.begin();
+    B.markSent(undefined, claim);
+    const T_B = server.issue();
+    const T_A = server.issue();
+    const pb = B.unlock({ claim, ...T_B });
+    await yieldToTimers();
+    const pa = A.unlock({ claim, ...T_A });
+    await yieldToTimers();
+    release();
+    const [b, a] = await Promise.all([pb, pa]);
+    assert.deepEqual(b, { ok: true }, locks);
+    assert.deepEqual(a, { ok: false, reason: "elsewhere" }, locks);
+    assert.deepEqual(server.oks, ["B"], locks);
+    assert.equal(storage.map.has(CLAIM_KEY), false, locks);
+    assert.equal(storage.map.has(`${SPEND_LOCK}-lease`), false, locks);
+  }
+});
+
+test("one payment reaches one grind across tabs: a spend left unanswered is finished by one tab only", async () => {
+  // Tab A's consume never got an answer (service down), so its token stays saved with the claim.
+  const storage = fakeStorage();
+  const server = realServer();
+  const A = setup([answers.down], { storage });
+  const claim = A.flow.begin();
+  A.flow.markSent(undefined, claim);
+  const T_A = server.issue();
+  assert.deepEqual(await A.flow.unlock({ claim, ...T_A }), { ok: false, reason: "unavailable" });
+  // Tab B opens. verify says the payment is unspent and gives B its own token.
+  const T_B = server.issue();
+  const B = createPayFlow({
+    storage,
+    now: () => 1_000_000,
+    sleep: yieldToTimers,
+    locks: locksFor(storage),
+    post: async (name, body) => (name === "verify" ? { status: 200, data: { ok: true, ...T_B } } : server.post("B")(name, body)),
+  });
+  const paidB = await B.watch();
+  assert.equal(paidB.outcome, "paid");
+  // B replays the saved T_A (it may have won), and wins. Tab A then retries its own T_A.
+  assert.deepEqual(await B.unlock(paidB), { ok: true });
+  const retryA = createPayFlow({ storage, now: () => 1_000_000, sleep: yieldToTimers, locks: locksFor(storage), post: server.post("A") });
+  assert.deepEqual(await retryA.unlock({ claim, ...T_A }), { ok: false, reason: "elsewhere" });
+  assert.deepEqual(server.oks, ["B"]);
+});
+
+test("without Web Locks a lease in storage keeps spends apart, and a lease left by a closed tab runs out", async () => {
+  const storage = fakeStorage();
+  const clock = { now: 1_000_000 };
+  const stale = { owner: "a tab that was closed", until: clock.now + LEASE_MS };
+  storage.setItem(`${SPEND_LOCK}-lease`, JSON.stringify(stale));
+  const posts = [];
+  let sleeps = 0;
+  const flow = createPayFlow({
+    storage,
+    now: () => clock.now,
+    sleep: async (ms) => {
+      if (++sleeps > MAX_SLEEPS) throw new Error("never settled");
+      clock.now += ms;
+      await yieldToTimers();
+    },
+    locks: null,
+    post: async (name, body) => {
+      posts.push({ name, at: clock.now, lease: JSON.parse(storage.getItem(`${SPEND_LOCK}-lease`)) });
+      return consumed;
+    },
+  });
+  const claim = flow.begin();
+  assert.deepEqual(await flow.unlock({ claim, token: "t" }), { ok: true });
+  // It waited for the old lease to run out, then spent under its own.
+  assert.equal(posts.length, 1);
+  assert.ok(posts[0].at >= stale.until, String(posts[0].at - stale.until));
+  assert.notEqual(posts[0].lease.owner, stale.owner);
+  assert.equal(storage.getItem(`${SPEND_LOCK}-lease`), null);
+});
+
+test("a saved token never strands the browser: every look asks verify, a refused payment is dropped, and give-up stays on offer", async () => {
+  const claim = encodeBase58(new Uint8Array(randomBytes(32)));
+  const record = { claim, createdAt: 1_000_000, sentAt: 1_000_000, token: "stale", tokenExpiresAt: 1 };
+
+  // After a payee change verify finds the claim's own transaction paid someone else.
+  const refused = setup([answers.wrongAmount], { storage: fakeStorage({ [CLAIM_KEY]: JSON.stringify(record) }) });
+  assert.deepEqual(await refused.flow.watch(), { outcome: "rejected", reason: "wrong_amount", message: "" });
+  assert.equal(refused.calls[0].name, "verify");
+  assert.equal(refused.flow.pending(), null);
+  // The customer may be owed a refund: its reference (never the claim) is kept.
+  const [note] = refused.flow.refundNotes();
+  assert.equal(note.reference, await referenceOf(claim));
+  assert.equal(note.why, "rejected");
+  assert.doesNotMatch(refused.storage.map.get(REFUND_NOTES_KEY), new RegExp(claim));
+
+  // A node that does not know the payment any more: a paid claim is never given up on its own,
+  // and after ten minutes the customer is offered to give it up.
+  const infos = [];
+  const controller = new AbortController();
+  const lost = setup(
+    [
+      () => {
+        if (infos.length === 300) controller.abort();
+        return answers.unseen;
+      },
+    ],
+    { storage: fakeStorage({ [CLAIM_KEY]: JSON.stringify(record) }) }
+  );
+  assert.deepEqual(await lost.flow.watch({ signal: controller.signal, onState: (state, info) => infos.push(info) }), { outcome: "stopped" });
+  assert.equal(lost.flow.pending().claim, claim);
+  assert.ok(infos.every((info) => info.giveUpIn === null));
+  assert.equal(infos[0].canAbandon, false);
+  assert.equal(infos.at(-1).canAbandon, true);
 });
 
 // ── A long wait can be given up, and the page says how long ─────────────────
@@ -460,10 +698,10 @@ test("after ten minutes unresolved the customer may give the attempt up; before 
   assert.equal(infos.at(-1).canAbandon, true);
   // Still saved: only the customer can give it up.
   assert.equal(flow.pending().claim, claim);
-  assert.equal(flow.abandon("someone-else"), null);
+  assert.equal(await flow.abandon("someone-else"), null);
   assert.equal(flow.pending().claim, claim);
-  const given = flow.abandon(claim);
-  assert.equal(given.claim, claim);
+  const given = await flow.abandon(claim);
+  assert.deepEqual(given, { reference: await referenceOf(claim), signature: null });
   assert.equal(flow.pending(), null);
   assert.doesNotThrow(() => flow.begin());
 });
@@ -586,7 +824,6 @@ test("a wallet error nobody recognises keeps the claim and follows it; a known r
 
   for (const [error, kind] of [
     [new Error("User rejected the request."), "rejected"],
-    [new Error("Transaction simulation failed: Blockhash not found"), "not_sent"],
     [new Error("Transfer: insufficient lamports 1000, need 2039280"), "insufficient_sol"],
   ]) {
     const { flow, storage } = setup(preparing());
@@ -608,7 +845,7 @@ test("a wallet that answers after another tab replaced the attempt leaves the ne
       payer: PAYER,
       async signAndSend() {
         // While the wallet is open, the other tab gives this attempt up and starts its own.
-        other.forget();
+        other.forget(other.pending().claim);
         replaced = other.begin();
         if (answer instanceof Error) throw answer;
         return answer;
@@ -641,4 +878,110 @@ test("prepare that is unreachable, or refuses, starts nothing", async () => {
   assert.deepEqual(await busy.flow.pay({ payer: PAYER, signAndSend: wallet([]).signAndSend }), { outcome: "busy" });
   assert.equal(busy.flow.pending().claim, claim);
   assert.equal(busy.calls.length, 0);
+});
+
+// ── Round 4 ──────────────────────────────────────────────────────────────────
+
+test("a resend refused at preflight is no proof nothing was sent: the claim is kept and the payment is found", async () => {
+  for (const error of [
+    new Error("Simulation failed. \nMessage: Transaction simulation failed: This transaction has already been processed."),
+    new Error("Transaction simulation failed: Blockhash not found"),
+  ]) {
+    const { flow, calls } = setup(preparing({ then: [answers.paid] }));
+    const result = await flow.pay({ payer: PAYER, signAndSend: wallet(error).signAndSend });
+    assert.equal(result.outcome, "unknown", error.message);
+    assert.equal(flow.pending().claim, result.claim);
+    assert.equal(flow.pending().walletError, true);
+    const found = await flow.watch();
+    assert.deepEqual(found, { outcome: "paid", claim: result.claim, token: "token-1", expiresAt: 1_600_000 });
+    assert.deepEqual(calls[1], { name: "verify", body: { claim: result.claim } });
+  }
+});
+
+test("a given-up payment's reference is kept until the customer hides it, across reloads and later payments", async () => {
+  const signature = new Uint8Array(64).fill(4);
+  const first = setup([answers.down]);
+  const claim = first.flow.begin();
+  first.flow.markSent([{ signature }], claim);
+  const given = await first.flow.abandon(claim);
+  const reference = await referenceOf(claim);
+  assert.deepEqual(given, { reference, signature: encodeBase58(signature) });
+
+  // A reload, then a new payment that is found and spent: the note is still there.
+  const later = setup([answers.paid, consumed], { storage: first.storage });
+  assert.deepEqual(later.flow.refundNotes().map(({ reference: r, signature: s, why }) => ({ r, s, why })), [
+    { r: reference, s: encodeBase58(signature), why: "abandoned" },
+  ]);
+  const next = later.flow.begin();
+  later.flow.markSent(undefined, next);
+  const paid = await later.flow.watch();
+  assert.deepEqual(await later.flow.unlock(paid), { ok: true });
+  assert.equal(later.flow.refundNotes().length, 1);
+  // The claim, which would let anyone redeem the payment, is never kept with the note.
+  assert.doesNotMatch(later.storage.map.get(REFUND_NOTES_KEY), new RegExp(claim));
+
+  later.flow.dismissRefund("some other reference");
+  assert.equal(later.flow.refundNotes().length, 1);
+  later.flow.dismissRefund(reference);
+  assert.deepEqual(later.flow.refundNotes(), []);
+  assert.equal(later.storage.map.has(REFUND_NOTES_KEY), false);
+  // Damaged notes read as none.
+  later.storage.setItem(REFUND_NOTES_KEY, "{not json");
+  assert.deepEqual(later.flow.refundNotes(), []);
+});
+
+test("a long reference history is followed with the cursor the server returns, across a reload", async () => {
+  const cursor1 = newSignature();
+  const cursor2 = newSignature();
+  const searching = (cursor) => ({ status: 202, data: { ok: false, reason: "searching", cursor } });
+  const first = setup([searching(cursor1), searching(cursor2)]);
+  const claim = first.flow.begin();
+  first.flow.markSent(undefined, claim);
+  const states = [];
+  const controller = new AbortController();
+  await first.flow.watch({
+    signal: controller.signal,
+    onState: (state) => {
+      states.push(state);
+      if (states.length === 2) controller.abort();
+    },
+  });
+  assert.deepEqual(states, ["searching", "searching"]);
+  assert.deepEqual(first.calls.map((c) => c.body.cursor), [undefined, cursor1]);
+  assert.equal(first.flow.pending().cursor, cursor2);
+
+  // The page is reloaded: the search carries on from where it was.
+  const reloaded = setup([answers.paid], { storage: first.storage });
+  assert.equal((await reloaded.flow.watch()).outcome, "paid");
+  assert.deepEqual(reloaded.calls[0].body, { claim, cursor: cursor2 });
+
+  // "searching" without a cursor that is a signature decides nothing and saves nothing.
+  for (const cursor of [undefined, "../x", 5]) {
+    const odd = setup([searching(cursor)]);
+    odd.flow.begin();
+    assert.deepEqual(await odd.flow.check(), { state: "unavailable" });
+    assert.equal(odd.flow.pending().cursor, null);
+  }
+});
+
+test("a fresh token fetched while another tab replaced the attempt is never saved onto the new attempt", async () => {
+  const storage = fakeStorage();
+  const other = setup([answers.unseen], { storage });
+  let newer = null;
+  // Both flows draw the same test randomness: move the other tab past the claim this tab will draw.
+  other.flow.forget(other.flow.begin());
+  const replaceDuringVerify = () => {
+    other.flow.forget(other.flow.pending().claim); // the other tab gave this payment up and began its own
+    newer = other.flow.begin();
+    return answers.paid;
+  };
+  const tab = setup([{ status: 401, data: { ok: false, reason: "expired" } }, replaceDuringVerify, consumed], { storage });
+  const claim = tab.flow.begin();
+  tab.flow.markSent(undefined, claim);
+  const result = await tab.flow.unlock({ claim, token: "stale", expiresAt: 1 });
+  assert.deepEqual(result, { ok: false, reason: "elsewhere" });
+  assert.deepEqual(tab.calls.map((c) => c.name), ["consume", "verify"]);
+  assert.notEqual(newer, claim);
+  assert.equal(tab.flow.pending().claim, newer);
+  assert.equal(tab.flow.pending().token, null);
 });

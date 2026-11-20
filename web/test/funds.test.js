@@ -66,13 +66,23 @@ test("wallet errors map to friendly messages that mention the network fee", () =
     "insufficient_sol"
   );
   assert.equal(classifyWalletError(new Error("Unexpected error")), null);
-  // Refused at preflight, so never broadcast: the customer may pay again at once.
-  assert.equal(classifyWalletError(new Error("Transaction simulation failed: Blockhash not found")), "not_sent");
-  assert.equal(classifyWalletError({ code: -32002, message: "Blockhash not found" }), "not_sent");
-  assert.equal(
-    classifyWalletError(new Error("Transaction simulation failed: Error processing Instruction 1: invalid account data for instruction")),
-    "not_sent"
-  );
+  // A failed preflight is no proof that nothing was sent: a wallet's resend of a transfer that
+  // already landed fails it too. Each of these keeps the claim and the payment is looked for.
+  for (const error of [
+    new Error("Transaction simulation failed: This transaction has already been processed"),
+    new Error("Simulation failed. \nMessage: Transaction simulation failed: This transaction has already been processed. \nLogs: []"),
+    new Error("failed to send transaction: Transaction simulation failed: This transaction has already been processed"),
+    { code: -32002, message: "Transaction simulation failed: This transaction has already been processed", data: { err: "AlreadyProcessed" } },
+    new Error("AlreadyProcessed"),
+    new Error("Transaction simulation failed: Blockhash not found"),
+    { code: -32002, message: "Blockhash not found" },
+    new Error("BlockhashNotFound"),
+    new Error("Transaction simulation failed: Error processing Instruction 1: invalid account data for instruction"),
+    new Error("Simulation failed."),
+  ]) {
+    assert.equal(classifyWalletError(error), null, String(error?.message));
+  }
+  assert.equal(PAY_ERRORS.not_sent, undefined);
   // Sent, then not seen in time: it may still land, so it is not "not sent".
   assert.equal(
     classifyWalletError(new Error("Transaction was not confirmed in 30.00 seconds. It is unknown if it succeeded or failed.")),

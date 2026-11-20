@@ -8,7 +8,7 @@ import { TOKEN_PROGRAM_ID, USDC_MINT } from "../netlify/functions/lib/constants.
 import { SIGNATURE_LIMIT } from "../netlify/functions/lib/rpc.js";
 import { memoryStore, spentKey } from "../netlify/functions/lib/store.js";
 import { readUnlockToken } from "../netlify/functions/lib/token.js";
-import { consumeUnlock, verifyPayment } from "../netlify/functions/lib/verify.js";
+import { REFERENCE_PAGES, REFERENCE_READS, consumeUnlock, verifyPayment } from "../netlify/functions/lib/verify.js";
 import {
   OTHER_MINT,
   PAYEE_ATA,
@@ -358,14 +358,82 @@ function flooded() {
   return { ...customer, rpc: chainRpc([customer.tx, ...junk]) };
 }
 
-test("a full page of signatures hides the oldest, so the answer is 'cannot tell', never a verdict", async () => {
-  const { claim, rpc } = flooded();
+test("a full page of transactions after the payment cannot hide it: the search walks back to the oldest end", async () => {
+  const { claim, rpc, signature } = flooded();
   const result = await verify({ claim, rpc });
-  assert.equal(result.ok, false);
-  // 503: the page keeps its claim and asks again. A 400 would make it give the payment up.
-  assert.equal(result.status, 503);
-  assert.equal(result.reason, "unavailable");
-  assert.equal(rpc.calls.getTransaction, 0);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(readUnlockToken(result.token, SECRET, NOW).signature, signature);
+  // The newest page, then the page just older than its oldest row, where the payment is.
+  assert.equal(rpc.calls.getSignaturesForAddress, 2);
+  assert.equal(rpc.befores[0], undefined);
+  assert.equal(typeof rpc.befores[1], "string");
+  // The 1,000 failed transactions cost no reads: only the payment was read.
+  assert.equal(rpc.calls.getTransaction, 1);
+});
+
+/** A payment, then `count` successful transactions naming its reference that pay nothing. */
+function buried(count) {
+  const customer = paid();
+  const junk = Array.from({ length: count }, () =>
+    paymentTx({ references: [customer.reference], pre: [balance(2, 8_000_000)], post: [balance(2, 8_000_000)] })
+  );
+  return { ...customer, rpc: chainRpc([customer.tx, ...junk]) };
+}
+
+test("a history longer than one call can list is resumed from the cursor each call returns, and the payment is found", async () => {
+  const pages = REFERENCE_PAGES * 2 + 1;
+  const { claim, rpc, signature } = buried(SIGNATURE_LIMIT * (pages - 1) + 500);
+  let cursor;
+  const answers = [];
+  for (let call = 0; call < 5; call++) {
+    const result = await verify({ claim, rpc, cursor });
+    answers.push(result.ok ? "paid" : result.reason);
+    if (result.ok) {
+      assert.equal(readUnlockToken(result.token, SECRET, NOW).signature, signature);
+      break;
+    }
+    // Still walking back: a 202, never a verdict, with where to carry on from.
+    assert.equal(result.status, 202);
+    assert.equal(result.reason, "searching");
+    assert.match(result.cursor, /^[1-9A-HJ-NP-Za-km-z]{64,88}$/);
+    assert.notEqual(result.cursor, cursor);
+    cursor = result.cursor;
+  }
+  assert.deepEqual(answers, ["searching", "searching", "paid"]);
+  // Each call lists at most REFERENCE_PAGES pages, and nothing is read until the oldest end is reached.
+  assert.equal(rpc.calls.getSignaturesForAddress, pages);
+  assert.equal(rpc.calls.getTransaction, 1);
+});
+
+test("a search that started from a cursor never says 'not found': the newer rows it skipped were never read", async () => {
+  // Only junk names this reference: two calls' worth and a bit, then the oldest end.
+  const { claim, reference } = newClaim();
+  const junk = Array.from({ length: SIGNATURE_LIMIT * REFERENCE_PAGES + 10 }, () =>
+    paymentTx({ references: [reference], err: { InstructionError: [0, { Custom: 1 }] } })
+  );
+  const rpc = chainRpc(junk);
+  const first = await verify({ claim, rpc });
+  assert.equal(first.reason, "searching");
+  const second = await verify({ claim, rpc, cursor: first.cursor });
+  assert.equal(second.status, 503);
+  assert.equal(second.reason, "unavailable");
+
+  // A cursor the node does not know lists nothing, which is not "not found" either.
+  const unknown = await verify({ claim, rpc: chainRpc([]), cursor: newSignature() });
+  assert.equal(unknown.status, 503);
+  // Without a cursor, an empty history is "not found", as before.
+  assert.equal((await verify({ claim, rpc: chainRpc([]) })).reason, "not_found");
+});
+
+test("a cursor that is not a signature is refused before the chain is read", async () => {
+  const { claim } = newClaim();
+  for (const cursor of ["", "../spent/x", "0".repeat(88), 5, { before: "x" }]) {
+    const rpc = chainRpc([]);
+    const result = await verify({ claim, rpc, cursor });
+    assert.equal(result.status, 400, JSON.stringify(cursor));
+    assert.equal(result.reason, "invalid");
+    assert.equal(rpc.calls.getSignaturesForAddress, 0);
+  }
 });
 
 test("a full page that still shows the payment is no reason to stall: every successful row is a candidate", async () => {
@@ -420,6 +488,20 @@ test("no more than four listed transactions are read per check; past that the an
   assert.equal(result.status, 503);
   assert.equal(result.reason, "unavailable");
   assert.equal(rpc.calls.getTransaction, 4);
+});
+
+test("the page's own transaction, final but not served yet, is pending: never searched past, never given up", async () => {
+  const { claim, signature, tx } = paid();
+  // The node reports the signature finalized but cannot serve the transaction yet,
+  // and its address index has not listed it under the reference either.
+  const rpc = chainRpc([]);
+  rpc.getSignatureStatuses = async () => [{ err: null, confirmationStatus: "finalized" }];
+  const result = await verify({ claim, signature, rpc });
+  assert.equal(result.status, 202);
+  assert.equal(result.reason, "pending");
+  assert.equal(rpc.calls.getTransaction, 1);
+  assert.equal(rpc.calls.getSignaturesForAddress, 0);
+  assert.ok(tx);
 });
 
 test("the transaction the page sent is judged on its own, however many others name the reference", async () => {
@@ -598,6 +680,49 @@ test("consume refuses tokens that are expired, altered, foreign or malformed", a
   // None of that spent anything.
   assert.equal(await store.get(spentKey(signature)), null);
   assert.equal((await consume(token, store)).ok, true);
+});
+
+test("the token that won is answered 'ok' again after UNLOCK_SECRET is rotated; no other token is", async () => {
+  const { claim, rpc, signature } = paid();
+  const store = memoryStore();
+  const won = await verify({ claim, rpc, store });
+  const lost = await verify({ claim, rpc, store });
+  assert.equal((await consume(won.token, store)).ok, true);
+
+  // The answer to the winning spend was lost, then the operator rotated the secret.
+  const ROTATED = "a-completely-new-unlock-secret";
+  const replay = await consumeUnlock({ token: won.token, store, secret: ROTATED, now: NOW + 86_400_000 });
+  assert.deepEqual(replay, { ok: true, status: 200 });
+
+  // Another token for the same payment, or one that only names it, gets nothing.
+  assert.equal((await consumeUnlock({ token: lost.token, store, secret: ROTATED, now: NOW })).reason, "bad");
+  const [body] = won.token.split(".");
+  const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+  const guessed = Buffer.from(JSON.stringify({ ...payload, jti: "AAAAAAAAAAAAAAAA" })).toString("base64url");
+  assert.equal((await consumeUnlock({ token: `${guessed}.x`, store, secret: ROTATED, now: NOW })).reason, "bad");
+  // Nothing was written by any of it.
+  assert.equal((await store.get(spentKey(signature))).jti, payload.jti);
+  // And a winner's id only ever answers for a payment already spent: before the spend, it spends nothing.
+  const fresh = paid();
+  const unspent = await verify({ claim: fresh.claim, rpc: fresh.rpc, store });
+  assert.equal((await consumeUnlock({ token: unspent.token, store, secret: ROTATED, now: NOW })).reason, "bad");
+  assert.equal(await store.get(spentKey(fresh.signature)), null);
+});
+
+test("a payment the operator refunded and marked spent is refused as refunded, by verify and by consume", async () => {
+  const { claim, rpc, signature } = paid();
+  const store = memoryStore();
+  const issued = await verify({ claim, rpc, store });
+  // DEPLOY.md, "Refund requests": the record is written before the refund is sent.
+  assert.equal(await store.create(spentKey(signature), { refunded: true, at: NOW }), true);
+  for (const lookup of [{}, { signature }]) {
+    const result = await verify({ claim, rpc, store, ...lookup });
+    assert.equal(result.status, 409);
+    assert.equal(result.reason, "refunded");
+  }
+  const spent = await consume(issued.token, store);
+  assert.equal(spent.status, 409);
+  assert.equal(spent.reason, "refunded");
 });
 
 test("when the ledger cannot be written, nothing is spent and the token still works later", async () => {

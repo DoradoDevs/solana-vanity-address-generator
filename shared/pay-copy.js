@@ -6,7 +6,6 @@ export const PAY_ERRORS = {
   rejected: `The signature was rejected, so nothing was sent. ${NETWORK_FEE_NOTE}`,
   insufficient_usdc: `This wallet does not have 1.00 USDC. ${NETWORK_FEE_NOTE}`,
   insufficient_sol: `This wallet does not have enough SOL to submit the transfer. ${NETWORK_FEE_NOTE}`,
-  not_sent: `The wallet could not send the payment (the transfer failed its check before sending, or it expired while waiting for approval), so nothing was charged. Try again. ${NETWORK_FEE_NOTE}`,
   payee: `This wallet is the address that receives VanityGrinder payments, so it cannot pay itself. Connect another wallet. ${NETWORK_FEE_NOTE}`,
 };
 
@@ -85,26 +84,24 @@ function isInsufficientUsdc(text) {
 }
 
 /**
- * The RPC node refused the transaction before forwarding it: its preflight
- * simulation failed, for example because the blockhash expired while the
- * approval was open. A transaction refused at preflight is never broadcast.
- * A confirmation that timed out is not this: that transaction was sent.
- */
-function isNotSent(text) {
-  return text.includes("blockhash not found") || text.includes("simulation failed");
-}
-
-/**
  * Map a wallet connect/sign failure onto one of the known payment errors:
- * each one means the wallet sent nothing. null means it is unknown whether
- * the transfer went out, and the payment must be looked for before another.
+ * each one means no USDC can have moved. A refusal comes before anything is
+ * signed. A shortage of SOL or USDC is the state the transfer would run
+ * against, so it fails wherever it is sent.
+ *
+ * null means it is unknown whether the transfer went out, and the payment
+ * must be looked for before another. That includes every other preflight
+ * failure. A wallet may resend a transfer it already broadcast, and the
+ * resend's preflight then fails ("This transaction has already been
+ * processed", or "Blockhash not found" once the blockhash has aged out)
+ * while the first copy has landed. The error text cannot tell that resend
+ * from a first and only send, so it is never read as "nothing was sent".
  */
 export function classifyWalletError(error) {
   const text = errorText(error);
   if (isRejection(error, text)) return "rejected";
   if (isInsufficientSol(text)) return "insufficient_sol";
   if (isInsufficientUsdc(text)) return "insufficient_usdc";
-  if (isNotSent(text)) return "not_sent";
   return null;
 }
 

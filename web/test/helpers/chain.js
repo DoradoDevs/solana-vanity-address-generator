@@ -70,19 +70,25 @@ export function paymentTx({
 export function chainRpc(entries = []) {
   const chain = entries.map((entry) => (entry.tx ? entry : { tx: entry }));
   const calls = { getSignaturesForAddress: 0, getTransaction: 0, getSignatureStatuses: 0 };
+  const befores = [];
   return {
     calls,
-    async getSignaturesForAddress(address) {
+    /** The `before` cursor of each listing, in order (undefined for the newest page). */
+    befores,
+    async getSignaturesForAddress(address, { before } = {}) {
       calls.getSignaturesForAddress += 1;
-      return chain
+      befores.push(before);
+      const rows = chain
         .filter(({ tx, status }) => status !== "unseen" && tx.transaction.message.accountKeys.some((key) => key.pubkey === address))
         .map(({ tx, status = "finalized" }) => ({
           signature: tx.transaction.signatures[0],
           err: tx.meta.err,
           confirmationStatus: status,
         }))
-        .reverse()
-        .slice(0, SIGNATURE_LIMIT);
+        .reverse();
+      // Like a node: the page starts just older than `before`; a signature it does not know gives nothing.
+      const start = before === undefined ? 0 : rows.findIndex((row) => row.signature === before) + 1;
+      return start === 0 && before !== undefined ? [] : rows.slice(start, start + SIGNATURE_LIMIT);
     },
     async getSignatureStatuses(signatures) {
       calls.getSignatureStatuses += 1;

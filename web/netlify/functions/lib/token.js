@@ -1,8 +1,11 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { isSignature } from "./address.js";
 import { TOKEN_TTL_MS } from "./constants.js";
 
 const VERSION = 2;
 const MAX_TOKEN_LENGTH = 512;
+/** 12 random bytes in base64url, as signUnlockToken makes them. */
+const JTI = /^[A-Za-z0-9_-]{16}$/;
 
 function mac(body, secret) {
   return createHmac("sha256", secret).update(body).digest("base64url");
@@ -55,4 +58,26 @@ export function readUnlockToken(token, secret, now = Date.now()) {
   // Expired but authentic: what it names is returned so the ledger can still be asked about it.
   if (payload.exp < now) return { ok: false, reason: "expired", signature: payload.sig, jti: payload.jti };
   return { ok: true, signature: payload.sig, jti: payload.jti, exp: payload.exp };
+}
+
+/**
+ * What a token says it names, without checking its signature: the
+ * transaction and the token's random id, or null when it is not even shaped
+ * like a token. Nothing read here is believed. consumeUnlock uses it only to
+ * ask whether that exact token already won (the ledger holds the winner's
+ * id), which is true for the token's holder and for nobody else.
+ * @returns {{ signature: string, jti: string } | null}
+ */
+export function readUnlockClaims(token) {
+  if (typeof token !== "string" || token.length > MAX_TOKEN_LENGTH) return null;
+  const dot = token.indexOf(".");
+  if (dot <= 0) return null;
+  let payload;
+  try {
+    payload = JSON.parse(Buffer.from(token.slice(0, dot), "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (payload?.v !== VERSION || !isSignature(payload.sig) || !JTI.test(payload.jti ?? "")) return null;
+  return { signature: payload.sig, jti: payload.jti };
 }
