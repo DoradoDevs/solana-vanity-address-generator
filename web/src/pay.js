@@ -316,7 +316,6 @@ function markPaid(claim, token, expiresAt) {
   listingWallets = false;
   document.getElementById("pay-wallet-list")?.replaceChildren();
   setStatus("Paid. Starting this grind.");
-  document.getElementById("pay-gate")?.classList.add("paid");
   settleWaiters({ ok: true });
 }
 
@@ -528,9 +527,10 @@ export async function consumePaidGrind() {
   }
 
   paidUnlock = null;
-  document.getElementById("pay-gate")?.classList.remove("paid");
   if (spent.ok) {
-    setStatus("Grind unlocked. Pay again for another run.");
+    // The payment is spent on this grind: no status is left to come back beside
+    // Start grinding after the run and claim a paid grind that no longer exists.
+    setStatus("");
     return { ok: true };
   }
   let message;

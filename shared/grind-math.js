@@ -218,6 +218,17 @@ export function foundByNowProbability(attempts, expected) {
 }
 
 /**
+ * The number of keys after which a search has found a match with chance `p`,
+ * the inverse of foundByNowProbability. A horizon in attempts, never a time:
+ * how fast a device gets there is not known in advance.
+ */
+export function attemptsForChance(p, expected) {
+  if (!Number.isFinite(expected) || expected <= 0 || !(p > 0) || !(p < 1)) return Infinity;
+  if (expected <= 1) return 1;
+  return Math.ceil(Math.log1p(-p) / Math.log1p(-1 / expected));
+}
+
+/**
  * A probability as a short figure: whole percents, one decimal under 10%, and
  * bounds at the ends so a tiny chance never reads as 0% and a near-certain one
  * never reads as 100%. Rounded down, so the figure never overstates the chance.

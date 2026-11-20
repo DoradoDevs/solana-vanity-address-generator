@@ -11,7 +11,7 @@
   <meta name="color-scheme" content="dark" />
   <meta name="referrer" content="no-referrer" />
   <link rel="canonical" href="https://vanitygrinder.com/" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👛</text></svg>" />
+  <link rel="icon" href="data:," />
 
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="VanityGrinder" />
@@ -22,13 +22,13 @@
   <meta property="og:image" content="https://vanitygrinder.com/og.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="VanityGrinder, a client-side Solana vanity address generator" />
+  <meta property="og:image:alt" content="A sample VanityGrinder run: the generator window with its readouts and a found address, the pattern CAFE underlined at its start." />
 
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="VanityGrinder — Solana Vanity Address Generator" />
   <meta name="twitter:description" content="Custom Solana addresses generated on your device. $1 in USDC per grind, paid from your wallet." />
   <meta name="twitter:image" content="https://vanitygrinder.com/og.png" />
-  <meta name="twitter:image:alt" content="VanityGrinder, a client-side Solana vanity address generator" />
+  <meta name="twitter:image:alt" content="A sample VanityGrinder run: the generator window with its readouts and a found address, the pattern CAFE underlined at its start." />
 
   <script type="application/ld+json">
   {
@@ -80,7 +80,7 @@
         <a class="nav__link" href="#support">Support</a>
       </nav>
       <div class="nav__actions">
-        <a class="btn btn--primary btn--sm nav__cta" href="#pattern">Start grinding</a>
+        <a class="btn btn--primary btn--sm nav__cta" href="#pattern" data-start>Start grinding</a>
         <details class="nav__menu">
           <summary class="btn">Menu</summary>
           <div class="nav__panel">
@@ -109,6 +109,7 @@
           <div class="stack hero__copy">
             <p class="lede">Keys are generated on your device; the only network call is payment verification.</p>
             <div class="row hero__actions">
+              <a class="btn btn--primary btn--lg" href="#pattern" data-start>Start grinding</a>
               <a class="btn btn--lg" href="#estimator">Estimate a pattern</a>
             </div>
           </div>
@@ -188,14 +189,14 @@
 
               <div id="terminal-window" class="vg-run window__body--pad stack notranslate" data-stack="5" translate="no">
                 <dl class="readouts vg-readouts" id="readouts" data-state="idle">
-                  <div class="readout readout--current vg-readout"><dt class="readout__label">attempts/s</dt><dd class="readout__value vg-readout__value" id="ro-rate">0</dd></div>
+                  <div class="readout readout--current vg-readout"><dt class="readout__label">attempts/s</dt><dd class="readout__value vg-readout__value" id="ro-rate"><span class="vg-gap"><span class="hatch vg-gap__mark" aria-hidden="true"></span>Not measured yet</span></dd></div>
                   <div class="readout vg-readout"><dt class="readout__label">attempts</dt><dd class="readout__value vg-readout__value" id="ro-attempts">0</dd></div>
-                  <div class="readout vg-readout"><dt class="readout__label">found by now, probability</dt><dd class="readout__value vg-readout__value" id="ro-chance">0%</dd></div>
+                  <div class="readout vg-readout"><dt class="readout__label">found by now, probability</dt><dd class="readout__value vg-readout__value" id="ro-chance"><span class="vg-gap"><span class="hatch vg-gap__mark" aria-hidden="true"></span>Not started</span></dd></div>
                 </dl>
                 <div class="vg-addr">
                   <p class="vg-addr__label" id="addr-label">Preview</p>
                   <div class="vg-addr__row">
-                    <p class="value vg-addr__value" id="addr" aria-labelledby="addr-label"></p>
+                    <p class="value vg-addr__value" id="addr"><span class="vg-addr__note">Type a pattern to preview it.</span></p>
                     <button type="button" class="btn btn--ghost btn--sm" id="addr-copy" data-copy="#addr" hidden><svg class="icon icon--copy" aria-hidden="true"><use href="#i-copy" /></svg><svg class="icon icon--done" aria-hidden="true"><use href="#i-check" /></svg><span data-label>Copy address</span></button>
                   </div>
                 </div>
@@ -326,7 +327,8 @@
               <input class="input vg-num" id="est-rate" type="number" min="100" max="100000" value="5000" inputmode="numeric" />
             </div>
           </div>
-          <div class="vg-est__result" id="est-result" aria-live="polite"></div>
+          <div class="vg-est__result" id="est-result"></div>
+          <p class="sr-only" id="est-live" aria-live="polite"></p>
         </form>
 
         <div class="stack" data-stack="3">
@@ -442,8 +444,8 @@
       </div>
       <ul class="footer__links">
         <li><a href="https://github.com/DoradoDevs/solana-vanity-address-generator" rel="noopener noreferrer">Source</a></li>
-        <li>MIT</li>
-        <li>DoradoDevs</li>
+        <li><a href="https://github.com/DoradoDevs/solana-vanity-address-generator/blob/main/LICENSE" rel="noopener noreferrer">MIT licence</a></li>
+        <li><a href="https://github.com/DoradoDevs" rel="noopener noreferrer">DoradoDevs</a></li>
       </ul>
     </div>
   </footer>

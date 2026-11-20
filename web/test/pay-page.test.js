@@ -448,11 +448,13 @@ test("a spend that gets no answer drops this visit's unlock: the next step follo
   await choose(page, wallet);
   await until(() => page.status() === "Paid. Starting this grind.", "paid");
   assert.equal((await page.pay.consumePaidGrind()).ok, false);
-  assert.equal(page.document.getElementById("pay-gate").classList.names.has("paid"), false);
+  assert.notEqual(page.status(), "Paid. Starting this grind.");
   // Nothing is held in memory any more: the saved attempt is followed again through verify.
   assert.deepEqual(await page.pay.ensurePaid(), { ok: true });
   assert.equal(api.of("verify").length, 2);
   assert.deepEqual(await page.pay.consumePaidGrind(), { ok: true });
+  // A spent payment leaves no status to reappear beside Start grinding after the run.
+  assert.equal(page.status(), "");
 });
 
 test("closing the tab asks first while a grind runs, a key is held, or a spend is on its way, and only then", async () => {

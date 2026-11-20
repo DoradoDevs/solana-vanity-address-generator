@@ -4,6 +4,10 @@
  * here, all prefixed vg-, plus .pay-id, which pay.js and its test name:
  * no bare element selectors and no system custom property is redefined.
  * Radii come from the system's tokens; nothing here sets one by hand.
+ *
+ * These rules are unlayered, so they beat every system layer: a block inside
+ * a .stack never sets its own margin-block-start, or its gap is lost. The
+ * system's base layer already zeroes list margins.
  */
 
 /* ── The generator: the real tool, framed in the hero ── */
@@ -72,7 +76,6 @@
 .vg-warnings {
   display: grid;
   gap: var(--s-2);
-  margin: 0;
   padding: 0;
   list-style: none;
   color: var(--text-2);
@@ -114,8 +117,8 @@
   display: none;
 }
 
-/* While a job is measured, ground or held, the console speaks; the
-   payment's last word ("Grind unlocked") would only repeat it. */
+/* While a job is measured, ground or held, the console speaks. (A spent
+   payment leaves no status behind: pay.js clears it when the grind starts.) */
 .vg-pay[data-phase="measuring"] > .vg-pay__status,
 .vg-pay[data-phase="grinding"] > .vg-pay__status,
 .vg-pay[data-phase="holding"] > .vg-pay__status {
@@ -193,14 +196,36 @@
 .vg-run {
   display: grid;
   align-content: start;
+  container-type: inline-size;
 }
 
 .vg-readouts[data-state="idle"] .vg-readout__value {
   color: var(--text-3);
 }
 
-/* On a phone the three figures are rows: the label, then its figure at the end. */
-@media (max-width: 35.99rem) {
+/* A figure not measured yet: a short hatch and the words, never a zero. */
+.vg-gap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  color: var(--text-3);
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
+  font-weight: 400;
+  letter-spacing: normal;
+}
+
+.vg-gap__mark {
+  flex: none;
+  inline-size: 1.25rem;
+  block-size: 0.75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+}
+
+/* When the run column is narrow (a phone, or the split window on a tablet)
+   the three figures are rows: the label, then its figure at the end. */
+@container (max-width: 29.99rem) {
   .vg-readouts {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s-2);
@@ -242,6 +267,13 @@
 
 .vg-addr__dots {
   color: var(--text-3);
+}
+
+.vg-addr__note {
+  color: var(--text-3);
+  font-family: var(--font-sans);
+  font-size: var(--fs-14);
+  line-height: var(--lh-14);
 }
 
 /* The console keeps one height, so lines arriving never move the page. */
@@ -389,7 +421,6 @@
 .vg-list {
   display: grid;
   gap: var(--s-2);
-  margin: 0;
   padding-inline-start: 1.25rem;
   color: var(--text-2);
   font-size: var(--fs-15);

@@ -161,12 +161,34 @@ Branch `ui/2026-11-20`. Page defects found in the before screenshots and fixed b
 |---|---|---|---|
 | UX-01 | The payment step sat above the terminal before any pattern was entered. | FIXED: it appears in the side panel only after Start grinding has measured the device. | screenshots `generator-ready`, `generator-pay` |
 | UX-02 | During a run the terminal promised a remaining time (ETA), which a random search cannot keep. | FIXED: replaced by a "found by now" probability readout. | ui.test "found-by-now probability…", "probability figures round down…" |
-| UX-03 | The headline was gradient text, with a matrix-rain canvas, blurred colour blobs, traffic-light dots and CRT scanlines around it. | FIXED: removed; the generator is framed in a plain window on a plinth. | `_design/tools/audit.mjs`, 0 failures |
+| UX-03 | The headline was gradient text, with a matrix-rain canvas, blurred colour blobs, traffic-light dots and CRT scanlines around it. | FIXED: removed; the generator is framed in a plain window on a plinth. | `_design/tools/audit.mjs`: 0 axe violations. It does report one failure, already present at `017b289`: see UX-23. |
 | UX-04 | Position and case were typed answers to terminal prompts; the choice buttons existed only on narrow screens. | FIXED: one form with radios, a checkbox and inline errors at every width. | screenshots `generator-invalid`, `generator-warning` |
 | UX-05 | The reference table marked hard rows, and the estimator its warnings, by colour alone. | FIXED: the row colour is gone; warnings carry a mark and a sentence. | audit axe, 0 serious |
 | UX-06 | Copy failures appeared as toasts, away from the key they were about. | FIXED: they are console lines under the key. | screenshot `generator-key` |
 | UX-07 | On a phone the Menu button's label sat off-centre and long console lines wrapped under the margin. | FIXED: system nav; console lines hang under their text. | screenshots `home-390`, `generator-key-390` |
-| UX-08 | The status line was far from the terminal it described. | FIXED: run state is a pill in the generator window's bar; `#live-status` stays the only live region. | ui.test "the console is a log that never speaks…" |
+| UX-08 | The status line was far from the terminal it described. | FIXED: run state is a pill in the generator window's bar; `#live-status` is the console's only voice (the payment step keeps its own `#pay-status`, `role="status"`). | ui.test "the console is a log that never speaks…" |
+
+### Round-7 UI review, 2026-11-20
+
+Two reviewers of the redesign. Each finding was reproduced on the built page (Chromium, a stand-in wallet, `/api/` mocked) before it was fixed; the after screenshots were taken again.
+
+| ID | Finding | Status | Regression test or check |
+|---|---|---|---|
+| UX-09 | The share image `og.png` was the old design (gradient headline, glowing orbs, pills) and claimed `connect-src 'none'`, which the page does not ship. | FIXED: rebuilt at 1200 by 630 from the generator itself, light theme, Geist, labelled Sample; only the page's own sentence. `og:image:alt` describes it. | ui.test "the share image is 1200 by 630…" (size and alt; the content was checked by eye) |
+| UX-10 | On a phone the key line scrolled out of the console when a match printed. | FIXED: the match is pinned to the top of the console; later lines no longer scroll it away. | probe: key line inside the 390px console before and after reveal; screenshot `generator-key-390` |
+| UX-11 | After Stop the readouts and progress line kept a count up to 500 ms old, under a summary with the final one. | FIXED: Stop draws the final count once; progress reports after Stop are dropped. | probe: readout, progress line and summary equal; screenshot `generator-stopped` |
+| UX-12 | The console printed a "Planning guess" and an "Est. time here" for an open-ended search. | FIXED: odds, a 50% horizon in attempts and the measured rate (`console-lines.js`). | ui.test "the console prints no time for an open-ended search…" |
+| UX-13 | The favicon was an emoji. | PARTLY FIXED: the emoji is gone; the icon is declared empty. A mark and a 180px touch icon wait on Alex. | ui.test "the page carries no emoji icon…" |
+| UX-14 | Two filled primaries during payment; the bar said "Start grinding" during a run and only focused the summary. | FIXED: during a run both Start grinding links read "Back to the run", unfilled. The hero has its primary again. | probe: one filled button at the pay step; screenshots `generator-pay`, `hero-1440` |
+| UX-15 | "Grind unlocked. Pay again for another run." came back beside Start grinding after a run. | FIXED: `consumePaidGrind` clears the status once the payment is spent. | pay-page.test "a spend that gets no answer…" (status is empty after a spend) |
+| UX-16 | `margin: 0` on `.vg-list` and `.vg-warnings` cancelled their `.stack` gap. | FIXED: the margin is left to the system's reset. | ui.test "product CSS never sets a margin…" |
+| UX-17 | The readouts stacked into three tall boxes at tablet widths. | FIXED: `.vg-run` is a size container; rows under 30rem of column. | ui.test (same), screenshot `hero-768` |
+| UX-18 | `aria-labelledby` on the `<p id="addr">`, a role that cannot be named. | FIXED: removed; the visible label sits right before it. | ui.test "…no name on an element that cannot hold one" |
+| UX-19 | Footer items lost their baseline on touch screens. | FIXED: every item is a link (licence, GitHub org), so all get the same box. | ui.test (same) |
+| UX-20 | Before a run the rate and probability read 0, and an empty preview wrapped into rows of dots. | FIXED: a `.hatch` with words; the empty preview says what to do. | ui.test "no unmeasured readout is drawn as zero…" |
+| UX-21 | A dead `paid` class hook in `pay.js`; the estimator result re-announced itself on every keystroke. | FIXED: hook removed; one sentence in `#est-live` after 700 ms. | ui.test "the estimator speaks once the input settles…" |
+| UX-22 | A click on Start grinding after fixing a Worker threads error was lost: blur hid the error and moved the button under the pointer. | FIXED: leaving a field never removes its error; typing a valid value does. Unparseable input ("4e") is an error, not the default. | ui.test "a count field the browser cannot parse…"; probe: one click starts the run |
+| UX-23 | Under forced colours (a light system scheme), the checked position radio keeps the dark accent as its focus ring, about 2.3:1 on Canvas. | OPEN, not a product bug: `system.css` sets `forced-color-adjust: none` on a checked `.check input`, so its outline is not forced to a system colour. Present at `017b289`; `system.css` is vendored byte for byte, so the fix belongs in the design system. | `_design/tools/audit.mjs`, forced-colours walk |
 
 ## Open and owner decisions
 
@@ -179,4 +201,5 @@ Branch `ui/2026-11-20`. Page defects found in the before screenshots and fixed b
 - VG-22: accept the jayson 5.0.0 override (outside web3.js's declared ^4.3.0) or pin back.
 - VG-23: the late-send status gap, unresolved (narrowed).
 - A-R16: typecheck/lint, suggestion only.
-- UI: the favicon is still an emoji; a brand mark is an open decision. The clipboard clear 60 s after copying the key is kept as before; confirm it is wanted.
+- UI: no favicon ships until Alex approves a mark (or the placeholder `#g-vanity` glyph from `_design/examples` as an interim); then add `/favicon.svg` with a dark-scheme style and a 180px PNG `apple-touch-icon`. The clipboard clear 60 s after copying the key is kept as before; confirm it is wanted.
+- UI (design system): UX-23, a checked `.check` radio's focus ring under forced colours; fix in `system.css`, then copy the release over `web/public/system.css`.

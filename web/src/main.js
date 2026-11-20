@@ -11,6 +11,8 @@ import {
   DEFAULT_KEYS_PER_THREAD,
   ADDRESS_LENGTH,
 } from "../../shared/grind-math.js";
+import { consoleWarnings, deviceLines, planLines } from "./console-lines.js";
+import { readCount } from "./fields.js";
 import { isLongPattern, isPublishableTipAddress, resolveBatch } from "../../shared/pro.js";
 import { consumePaidGrind, ensurePaid, initPay, spendInProgress } from "./pay.js";
 import { confirmUnload } from "./unload.js";
@@ -117,6 +119,7 @@ function printBox(rows) {
   box.textContent = rows.join("\n");
   output.appendChild(box);
   scrollToBottom();
+  return box;
 }
 
 function printRule() {
@@ -151,15 +154,41 @@ function printAddress(label, address, range) {
   return div;
 }
 
+/**
+ * The console follows its newest line, except once a match is printed: then
+ * the match stays at the top of the console, so on a short console (a phone)
+ * the warnings printed after it never push the key line out of view.
+ */
+let pinnedLine = null;
+
 function scrollToBottom() {
+  if (pinnedLine?.isConnected) {
+    const top = parseFloat(getComputedStyle(output).paddingTop) || 0;
+    output.scrollTop += pinnedLine.getBoundingClientRect().top - output.getBoundingClientRect().top - top;
+    return;
+  }
   output.scrollTop = output.scrollHeight;
 }
 
+function pinToTop(line) {
+  pinnedLine = line;
+  scrollToBottom();
+}
+
 function clearOutput() {
+  pinnedLine = null;
   output.replaceChildren();
 }
 
 // ── The address above the console: a preview, then the match ──
+
+/** No pattern yet, or one that cannot match: words in the address row, not a rule of dots. */
+function drawAddressNote(text) {
+  const span = document.createElement("span");
+  span.className = "vg-addr__note";
+  span.textContent = text;
+  addrEl.replaceChildren(span);
+}
 
 function drawAddress(parts, { dim = true } = {}) {
   const [before, hit, after] = parts;
@@ -187,9 +216,9 @@ function showPreview() {
   const pattern = patternEl.value.trim();
   const position = selectedPosition();
   addrCopy.hidden = true;
-  if (!pattern || validatePattern(pattern).length > 0) {
+  if (!pattern || patternProblem(pattern, { requireText: false })) {
     addrLabel.textContent = "Preview";
-    drawAddress(["·".repeat(ADDRESS_LENGTH), "", ""]);
+    drawAddressNote(pattern ? "Fix the pattern to preview it." : "Type a pattern to preview it.");
     return;
   }
   addrLabel.textContent = position === "prefix-or-suffix" ? "Preview, either end" : "Preview";
@@ -254,8 +283,16 @@ const PILL = {
   holding: ["Match found", "pill--ok"],
 };
 
+/** The page's Start grinding links. While a run holds the form they lead back to it, unfilled. */
+const startLinks = [...document.querySelectorAll("a[data-start]")];
+
 function setPhase(phase, pill = phase) {
   const inSetup = phase === "setup";
+  for (const link of startLinks) {
+    link.textContent = inSetup ? "Start grinding" : "Back to the run";
+    link.classList.toggle("btn--primary", inSetup);
+    link.classList.toggle("btn--ghost", !inSetup);
+  }
   form.hidden = !inSetup;
   jobEl.hidden = inSetup;
   gate.dataset.step = phase === "pay" ? "pay" : "idle";
@@ -343,16 +380,30 @@ function stopWorkers() {
   workers = [];
 }
 
-function resetReadouts() {
-  roRate.textContent = "0";
-  roAttempts.textContent = "0";
-  roChance.textContent = "0%";
+/** A figure that has not been measured: a hatch and words, never a zero. */
+function showGap(el, text) {
+  const mark = document.createElement("span");
+  mark.className = "hatch vg-gap__mark";
+  mark.setAttribute("aria-hidden", "true");
+  const words = document.createElement("span");
+  words.className = "vg-gap";
+  words.append(mark, text);
+  el.replaceChildren(words);
 }
 
-/** The readouts and the console's progress line. At most twice a second (scheduleProgress). */
-function updateProgress() {
+function resetReadouts() {
+  showGap(roRate, "Not measured yet");
+  roAttempts.textContent = "0";
+  showGap(roChance, "Not started");
+}
+
+/**
+ * The readouts and the console's progress line. At most twice a second
+ * (scheduleProgress), and once more with the final count when a run is stopped.
+ */
+function updateProgress(now = Date.now()) {
   if (!progressText) return;
-  const elapsed = (Date.now() - startTime) / 1000;
+  const elapsed = (now - startTime) / 1000;
   const rate = elapsed > 0 ? totalAttempts / elapsed : 0;
   const checked = formatAttempts(totalAttempts);
   const rateText = formatAttempts(Math.round(rate));
@@ -400,11 +451,11 @@ function showMatch(msg) {
   if (targetCount === 1) {
     print();
     const width = boxWidth();
-    printBox([boxTop(width), boxMid("MATCH FOUND", width), boxBot(width)]);
+    pinToTop(printBox([boxTop(width), boxMid("MATCH FOUND", width), boxBot(width)]));
     showFound(msg.address, range, "Found address");
   } else {
     print();
-    print(`  Match ${foundCount} of ${targetCount}`);
+    pinToTop(print(`  Match ${foundCount} of ${targetCount}`));
     showFound(msg.address, range, `Match ${foundCount} of ${targetCount}`);
   }
   print();
@@ -512,6 +563,8 @@ function startGrinding(job) {
       if (msg.type === "ready") return;
 
       if (msg.type === "progress") {
+        // After Stop the final count is already printed: a late report must not change it.
+        if (!grinding) return;
         totalAttempts += msg.count;
         scheduleProgress();
         return;
@@ -546,9 +599,12 @@ function startGrinding(job) {
 
 function requestStop() {
   if (!grinding) return;
-  const elapsed = (Date.now() - startTime) / 1000;
+  const now = Date.now();
+  const elapsed = (now - startTime) / 1000;
   const hadMatches = foundCount > 0;
   stopWorkers();
+  // The readouts and the progress line show the same final count as the summary below.
+  updateProgress(now);
   print();
   print("  Stopped.", "danger");
   print(`  Checked ${formatAttempts(totalAttempts)} keys in ${formatDuration(elapsed)}.`, "dim");
@@ -608,20 +664,38 @@ function patternProblem(pattern, { requireText }) {
 }
 
 function readThreads() {
-  const raw = threadsEl.value.trim();
-  if (raw === "") return { value: Math.max(1, cpuCount - 1) };
-  const n = parseInt(raw, 10);
-  if (!Number.isNaN(n) && n >= 1 && n <= maxThreads && String(n) === raw) return { value: n };
-  return { error: `Enter a number from 1 to ${maxThreads}.` };
+  return readCount(
+    { raw: threadsEl.value, badInput: threadsEl.validity?.badInput },
+    { max: maxThreads, fallback: Math.max(1, cpuCount - 1) }
+  );
 }
 
 function readBatch() {
   if (!siteConfig.pro.enabled) return { value: 1 };
-  const raw = batchEl.value.trim();
-  if (raw === "") return { value: 1 };
-  const parsed = resolveBatch(parseInt(raw, 10), siteConfig.pro);
+  const read = readCount(
+    { raw: batchEl.value, badInput: batchEl.validity?.badInput },
+    { max: siteConfig.pro.maxBatch, fallback: 1 }
+  );
+  if (read.error) return read;
+  const parsed = resolveBatch(read.value, siteConfig.pro);
   if (!parsed.rejected) return { value: parsed.batch };
   return { error: `Enter a number from 1 to ${siteConfig.pro.maxBatch}.` };
+}
+
+/**
+ * A count field's error appears when the field is left, and goes as soon as
+ * the value is fixed, while typing. Leaving the field never removes it: that
+ * would move Start grinding between the press and the release of the click
+ * that left the field, and the click would be lost.
+ */
+function watchCount(field, input, read) {
+  input.addEventListener("blur", () => {
+    const { error } = read();
+    if (error) setError(field, error);
+  });
+  input.addEventListener("input", () => {
+    if (input.hasAttribute("aria-invalid") && !read().error) setError(field, "");
+  });
 }
 
 /** The odds and the warnings beside the form, as the pattern is typed. */
@@ -647,8 +721,7 @@ function renderOdds() {
   });
   odds.textContent = formatOdds(job.attempts);
   // Rarity and case are facts about the pattern. Time warnings wait for this device's measured rate.
-  for (const warning of job.warnings) {
-    if (/assumed rate/.test(warning)) continue;
+  for (const warning of consoleWarnings(job.warnings)) {
     const li = document.createElement("li");
     li.textContent = warning;
     list.appendChild(li);
@@ -667,8 +740,8 @@ function initSetup() {
   patternEl.addEventListener("input", renderOdds);
   caseEl.addEventListener("change", renderOdds);
   for (const radio of form.querySelectorAll('input[name="position"]')) radio.addEventListener("change", renderOdds);
-  threadsEl.addEventListener("blur", () => setError("threads", readThreads().error || ""));
-  batchEl.addEventListener("blur", () => setError("batch", readBatch().error || ""));
+  watchCount("threads", threadsEl, readThreads);
+  watchCount("batch", batchEl, readBatch);
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -763,6 +836,7 @@ async function runJob(settings) {
     ...describeJob({ pattern, position, caseSensitive, threads, keysPerThread: DEFAULT_KEYS_PER_THREAD }),
   };
   currentJob = job;
+  pinnedLine = null;
   renderSummary(job);
   setPhase("measuring");
   focusQuietly(jobEl);
@@ -779,43 +853,10 @@ async function runJob(settings) {
 
   print();
   printRule();
-  const caseWord = caseSensitive ? "sensitive" : "insensitive";
-  if (isNarrow()) {
-    print(`  Pattern: "${pattern}"`);
-    print(`  Position: ${position}`);
-    print(`  Case: ${caseWord}`);
-    print(`  Threads: ${threads}`);
-    print(`  Matches: ${batch}`);
-    print(`  Est. keys: ~${formatAttempts(job.attempts)}`, "dim");
-    print(`  Planning guess: ${formatEstimate(job.seconds)}`, "dim");
-    print(`  At ~${formatAttempts(job.rate)} keys/s`, "dim");
-  } else {
-    print(`  Pattern:    "${pattern}"`);
-    print(`  Position:   ${position}`);
-    print(`  Case:       ${caseWord}`);
-    print(`  Threads:    ${threads}`);
-    print(`  Matches:    ${batch}`);
-    print(`  Est. keys:  ~${formatAttempts(job.attempts)} attempts`, "dim");
-    print(`  Planning guess: ${formatEstimate(job.seconds)} at ~${formatAttempts(job.rate)} keys/s`, "dim");
-  }
+  for (const [text, tone] of planLines(job, { narrow: isNarrow() })) print(text, tone);
   print("  Measuring this device…", "dim");
   const perWorker = await benchmarkDevice();
-  if (perWorker) {
-    const deviceRate = perWorker * threads;
-    const deviceSeconds = Number.isFinite(job.attempts) ? (job.attempts * batch) / deviceRate : Infinity;
-    if (isNarrow()) {
-      print(`  This device: ${formatAttempts(perWorker)} keys/s per worker`);
-      print(`  Across ${threads}: ~${formatAttempts(deviceRate)}/s`);
-      print(`  Est. time here: ${formatEstimate(deviceSeconds)}`);
-    } else {
-      print(
-        `  This device: ${formatAttempts(perWorker)} keys/s per worker, ~${formatAttempts(deviceRate)}/s across ${threads}`
-      );
-      print(`  Est. time here: ${formatEstimate(deviceSeconds)}`);
-    }
-  } else {
-    print("  Could not measure this device. The planning guess still stands.", "warn");
-  }
+  for (const [text, tone] of deviceLines(perWorker, threads, { narrow: isNarrow() })) print(text, tone);
   for (const line of previewLines(pattern, position)) print(line, line.trim() === "or" ? "dim" : "");
   print(
     caseSensitive
@@ -823,10 +864,7 @@ async function runJob(settings) {
       : "  A case-insensitive grind also keeps the other case.",
     "dim"
   );
-  if (batch > 1) {
-    print("  Batch time scales roughly with the number of matches.", "dim");
-  }
-  for (const warning of job.warnings) print(`  ${warning}`, "warn");
+  for (const warning of consoleWarnings(job.warnings)) print(`  ${warning}`, "warn");
   printRule();
   print();
   print("  Pay $1 to start grinding.", "warn");
@@ -914,6 +952,8 @@ function kvRow(label, value) {
   return row;
 }
 
+const ESTIMATE_SETTLE_MS = 700;
+
 function initEstimator() {
   const estForm = $("est-form");
   if (!estForm) return;
@@ -982,11 +1022,24 @@ function initEstimator() {
       parts.push(list);
     }
     result.replaceChildren(...parts);
+    return `Expected attempts ${figure.textContent}. Rough time ${formatEstimate(job.seconds)}.`;
+  }
+
+  // The result redraws on every keystroke and slider step; a screen reader hears
+  // one short sentence once the input has settled, not the whole block each time.
+  const live = $("est-live");
+  let settle = null;
+  function update() {
+    const sentence = render();
+    clearTimeout(settle);
+    settle = setTimeout(() => {
+      if (live) live.textContent = sentence;
+    }, ESTIMATE_SETTLE_MS);
   }
 
   for (const el of [estPattern, lengthEl, positionEl, estCase, estThreads, rateEl]) {
-    el.addEventListener("input", render);
-    el.addEventListener("change", render);
+    el.addEventListener("input", update);
+    el.addEventListener("change", update);
   }
   render();
 }
