@@ -252,16 +252,24 @@ test("a wallet error nobody recognises keeps the claim and looks for the payment
 test("while nothing is seen, the status counts down to when paying again is allowed, and says why it waits", async () => {
   const NOT_FOUND = { status: 202, data: { ok: false, reason: "not_found" } };
 
-  // The wallet threw something nobody recognises: it may or may not have sent.
-  const unknown = fakeWallet(new Error("Unexpected error"));
-  const api = fakeApi({ verify: [NOT_FOUND] });
-  const page = await load({ api, wallet: unknown.wallet });
-  await choose(page, unknown.wallet);
-  await until(() => /Up to \d:\d\d left/.test(page.status()), "the countdown after a wallet error");
-  assert.match(page.status(), /^Your wallet reported an error, so this page is making sure no payment went out/);
-  assert.match(page.status(), /Up to (3:00|2:5\d) left\.$/);
-  page.document.getElementById("pay-cancel").click();
-  unregister();
+  // The wallet threw something that does not prove nothing was sent: something nobody
+  // recognises, or a preflight refusal that a retry of a landed send also gets. The page
+  // waits at most three minutes, and says why.
+  for (const error of [new Error("Unexpected error"), new Error("Transaction simulation failed: Blockhash not found")]) {
+    const unknown = fakeWallet(error);
+    const api = fakeApi({ verify: [NOT_FOUND] });
+    const page = await load({ api, wallet: unknown.wallet });
+    await choose(page, unknown.wallet);
+    await until(() => /Up to \d:\d\d left/.test(page.status()), "the countdown after a wallet error");
+    assert.match(
+      page.status(),
+      /^Your wallet reported an error, but a wallet can report one even after the payment went out \(for example "Blockhash not found" on a retry\), so this page is making sure none did before you pay again\./
+    );
+    assert.match(page.status(), /Up to (3:00|2:5\d) left\.$/);
+    assert.ok(page.storage.getItem(CLAIM_KEY), error.message);
+    page.document.getElementById("pay-cancel").click();
+    unregister();
+  }
 
   // The page was closed while the wallet was asking: no signature, no error, one minute gone.
   const claim = encodeBase58(new Uint8Array(randomBytes(32)));
@@ -447,14 +455,42 @@ test("a spend that gets no answer drops this visit's unlock: the next step follo
   assert.deepEqual(await page.pay.consumePaidGrind(), { ok: true });
 });
 
-test("closing the tab while a spend is on its way asks first (main.js's beforeunload names spendInProgress)", () => {
+test("closing the tab asks first while a grind runs, a key is held, or a spend is on its way, and only then", async () => {
+  const { confirmUnload } = await import("../src/unload.js");
+  for (const grinding of [false, true]) {
+    for (const holdingKey of [false, true]) {
+      for (const spending of [false, true]) {
+        const event = { prevented: 0, preventDefault() { this.prevented += 1; } };
+        const asks = grinding || holdingKey || spending;
+        assert.equal(confirmUnload(event, { grinding, holdingKey, spending }), asks, JSON.stringify({ grinding, holdingKey, spending }));
+        assert.equal(event.prevented, asks ? 1 : 0);
+        assert.equal(event.returnValue, asks ? "" : undefined);
+      }
+    }
+  }
+  // main.js hands every beforeunload event to it, with the live state and nothing else in the way.
   const main = fs.readFileSync(new URL("../src/main.js", import.meta.url), "utf8");
-  const handler = main.match(/addEventListener\("beforeunload", \(event\) => \{([\s\S]*?)\n\}\);/);
-  assert.ok(handler, "one beforeunload handler");
-  const guard = handler[1].match(/if \(([^)]*\)?[^)]*)\) return;/);
-  assert.ok(guard, "the early return");
-  assert.match(guard[1], /!spendInProgress\(\)/);
-  assert.match(guard[1], /!grinding/);
-  assert.match(guard[1], /!holdingKey/);
-  assert.match(handler[1], /event\.preventDefault\(\)/);
+  const handlers = [...main.matchAll(/addEventListener\("beforeunload", \(event\) => \{([\s\S]*?)\n\}\);/g)];
+  assert.equal(main.split('"beforeunload"').length, 2, "one beforeunload listener");
+  assert.equal(handlers.length, 1);
+  assert.equal(handlers[0][1].trim(), "confirmUnload(event, { grinding, holdingKey, spending: spendInProgress() });");
+  assert.match(main, /^import \{ confirmUnload \} from "\.\/unload\.js";$/m);
+});
+
+test("a request that gets no answer is aborted after its time limit, well inside a spend's lease", async () => {
+  const { POST_TIMEOUT_MS, LEASE_MS } = await import("../src/pay-flow.js");
+  assert.ok(POST_TIMEOUT_MS * 4 <= LEASE_MS, "a few unanswered requests fit inside one lease");
+  const page = await load();
+  let signal = null;
+  globalThis.fetch = (url, init) => {
+    signal = init.signal;
+    return new Promise((resolve, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason)));
+  };
+  const started = Date.now();
+  await assert.rejects(page.pay.post("consume", { token: "t" }, { timeoutMs: 30 }));
+  assert.equal(signal.aborted, true);
+  assert.ok(Date.now() - started < 2_000);
+  // An answer in time is read as usual.
+  globalThis.fetch = async (url, init) => new Response(JSON.stringify({ ok: true }), { status: 200 });
+  assert.deepEqual(await page.pay.post("consume", { token: "t" }, { timeoutMs: 30 }), { status: 200, data: { ok: true } });
 });

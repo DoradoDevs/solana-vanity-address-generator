@@ -740,3 +740,38 @@ test("when the ledger cannot be written, nothing is spent and the token still wo
   await assert.rejects(consumeUnlock({ token, store: down, secret: SECRET, now: NOW }), /blobs unavailable/);
   assert.equal((await consume(token, store)).ok, true);
 });
+
+// ── Round 5 ───────────────────────────────────────────────────────────────────
+
+test("a payment that lands exactly on a call's boundary is found: the cursor's own row is listed again", async () => {
+  // The payment is the oldest row. With exactly one or two calls' worth of rows,
+  // it is the last row a call lists, the one the cursor names.
+  for (const calls of [1, 2]) {
+    const { claim, rpc, signature } = buried(SIGNATURE_LIMIT * REFERENCE_PAGES * calls - 1);
+    let cursor;
+    const answers = [];
+    for (let call = 0; call < calls + 3; call++) {
+      const result = await verify({ claim, rpc, cursor });
+      answers.push(result.ok ? "paid" : result.reason);
+      if (result.ok) {
+        assert.equal(readUnlockToken(result.token, SECRET, NOW).signature, signature);
+        break;
+      }
+      assert.equal(result.reason, "searching", `call ${call} of a ${calls * REFERENCE_PAGES}-page history`);
+      cursor = result.cursor;
+    }
+    assert.deepEqual(answers, [...Array(calls).fill("searching"), "paid"]);
+  }
+});
+
+test("with no UNLOCK_SECRET consume answers nothing, not even the token that already won", async () => {
+  const { claim, rpc, signature } = paid();
+  const store = memoryStore();
+  const won = await verify({ claim, rpc, store });
+  assert.equal((await consume(won.token, store)).ok, true);
+  const record = await store.get(spentKey(signature));
+  for (const secret of ["", undefined, null]) {
+    assert.deepEqual(await consumeUnlock({ token: won.token, store, secret, now: NOW }), { ok: false, status: 400, reason: "bad" });
+  }
+  assert.deepEqual(await store.get(spentKey(signature)), record);
+});

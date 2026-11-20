@@ -10,6 +10,7 @@ import {
 } from "../../shared/grind-math.js";
 import { isLongPattern, isPublishableTipAddress, resolveBatch } from "../../shared/pro.js";
 import { consumePaidGrind, ensurePaid, initPay, spendInProgress } from "./pay.js";
+import { confirmUnload } from "./unload.js";
 
 const output = document.getElementById("output");
 const inputLine = document.getElementById("input-line");
@@ -562,11 +563,9 @@ function requestStop() {
 }
 
 // A running grind, an unsaved key, and the answer to a spend on its way exist only in this
-// tab. Ask before any of them is thrown away.
+// tab. Ask before any of them is thrown away (unload.js).
 window.addEventListener("beforeunload", (event) => {
-  if (!grinding && !holdingKey && !spendInProgress()) return;
-  event.preventDefault();
-  event.returnValue = "";
+  confirmUnload(event, { grinding, holdingKey, spending: spendInProgress() });
 });
 
 document.addEventListener("keydown", (e) => {

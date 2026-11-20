@@ -33,8 +33,15 @@ export const REFUND_NOTES_KEY = "vg-pay-refunds";
 /** The browser-wide lock a spend holds, so one payment reaches one grind across tabs. */
 export const SPEND_LOCK = "vg-pay-spend";
 
-/** Without Web Locks: how long a spend's lease in storage lasts, and how often a waiting tab looks again. */
+/**
+ * Without Web Locks: how long a spend's lease in storage lasts, and how often
+ * a waiting tab looks again. The holder renews the lease before every request
+ * it sends, and no request lasts longer than POST_TIMEOUT_MS, so a live
+ * holder's lease never runs out while it spends.
+ */
 export const LEASE_MS = 120_000;
+/** The longest the page waits for one answer from the functions. Well under LEASE_MS. */
+export const POST_TIMEOUT_MS = 20_000;
 const LEASE_POLL_MS = 250;
 const LEASE_SETTLE_MS = 50;
 
@@ -99,10 +106,13 @@ function abortableSleep(ms, signal) {
 }
 
 /**
- * Run `fn` holding the browser-wide lock `name`, so two tabs never spend at
- * once. Web Locks where the browser has them: the lock goes with the tab, so
- * a tab closed mid-spend frees it at once. Otherwise a lease in storage,
- * which a tab closed mid-spend holds for at most LEASE_MS.
+ * Run `fn(hold)` holding the browser-wide lock `name`, so two tabs never
+ * spend at once. Web Locks where the browser has them: the lock goes with the
+ * tab, so a tab closed mid-spend frees it at once, and `hold()` is always
+ * true. Otherwise a lease in storage, which a tab closed mid-spend holds for
+ * at most LEASE_MS. There `hold()` renews the lease and says whether this tab
+ * still holds it: `fn` calls it before each request, and stops when it is
+ * false (the tab was frozen past LEASE_MS and another tab took over).
  */
 function storageLock(storage, { now, sleep, random }) {
   return async (name, fn) => {
@@ -126,8 +136,13 @@ function storageLock(storage, { now, sleep, random }) {
       await sleep(LEASE_SETTLE_MS);
       if (read()?.owner === owner) break;
     }
+    const hold = () => {
+      if (read()?.owner !== owner) return false;
+      storage.setItem(key, JSON.stringify({ owner, until: now() + LEASE_MS }));
+      return true;
+    };
     try {
-      return await fn();
+      return await fn(hold);
     } finally {
       if (read()?.owner === owner) storage.removeItem(key);
     }
@@ -148,7 +163,7 @@ export function createPayFlow({
   random = (bytes) => crypto.getRandomValues(new Uint8Array(bytes)),
   locks = globalThis.navigator?.locks ?? null,
 }) {
-  const withLock = locks ? (name, fn) => locks.request(name, () => fn()) : storageLock(storage, { now, sleep, random });
+  const withLock = locks ? (name, fn) => locks.request(name, () => fn(() => true)) : storageLock(storage, { now, sleep, random });
 
   /** The saved attempt, or null. Read from storage every time so two tabs agree. */
   function pending() {
@@ -475,12 +490,15 @@ export function createPayFlow({
   /**
    * Send an unlock token to consume. The same token is safe to send again, so
    * a lost response is retried rather than treated as a failure. On a verdict
-   * the attempt is cleared, if it is still `claim`.
-   * @returns {Promise<{ ok: true } | { ok: false, reason: "reused" | "refunded" | "expired" | "bad" | "unavailable", message?: string }>}
+   * the attempt is cleared, if it is still `claim`. `hold` is the spend
+   * lock's: asked before each request, and when it is false nothing more is
+   * sent ("elsewhere").
+   * @returns {Promise<{ ok: true } | { ok: false, reason: "reused" | "refunded" | "expired" | "bad" | "unavailable" | "elsewhere", message?: string }>}
    */
-  async function spend(token, claim) {
+  async function spend(token, claim, hold = () => true) {
     let wait = 1_000;
     for (let attempt = 0; attempt < SPEND_ATTEMPTS; attempt++) {
+      if (!hold()) return { ok: false, reason: "elsewhere" };
       let response = null;
       try {
         response = await post("consume", { token });
@@ -526,21 +544,21 @@ export function createPayFlow({
   async function unlock(paid) {
     if (typeof paid?.claim !== "string" || typeof paid.token !== "string") return { ok: false, reason: "unavailable" };
     const { claim } = paid;
-    return withLock(SPEND_LOCK, async () => {
+    return withLock(SPEND_LOCK, async (hold) => {
       const record = pending();
       if (!record || record.claim !== claim) return { ok: false, reason: "elsewhere" };
       const first = record.token ? { token: record.token, expiresAt: record.tokenExpiresAt } : paid;
       if (!update(claim, { token: first.token, tokenExpiresAt: first.expiresAt })) return { ok: false, reason: "elsewhere" };
-      const spent = await spend(first.token, claim);
+      const spent = await spend(first.token, claim, hold);
       if (spent.ok || (spent.reason !== "expired" && spent.reason !== "bad")) return spent;
 
       // That token can no longer spend. The payment may still be unspent: ask verify.
       const current = pending();
-      if (!current || current.claim !== claim) return { ok: false, reason: "elsewhere" };
+      if (!current || current.claim !== claim || !hold()) return { ok: false, reason: "elsewhere" };
       const again = await check(current);
       if (again.state === "paid") {
         if (!update(claim, { token: again.token, tokenExpiresAt: again.expiresAt })) return { ok: false, reason: "elsewhere" };
-        return spend(again.token, claim);
+        return spend(again.token, claim, hold);
       }
       if (again.state === "used") {
         forget(claim);

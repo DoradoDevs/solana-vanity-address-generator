@@ -13,10 +13,12 @@ import { SIGNATURE_LIMIT } from "../netlify/functions/lib/rpc.js";
 import { memoryStore, spentKey } from "../netlify/functions/lib/store.js";
 import { consumeUnlock, verifyPayment } from "../netlify/functions/lib/verify.js";
 import {
+  LAUNCH_AT,
   NOT_A_PAYMENT,
   REFUNDABLE,
   REFUNDED,
   REFUND_MIN_AGE_MS,
+  SENT_BACK,
   TOO_RECENT,
   UNCLEAR,
   USED,
@@ -25,6 +27,7 @@ import {
   main,
   markRefunded,
   oldPayments,
+  oldSolPayments,
   payeeUsdcAccount,
 } from "../scripts/payments.mjs";
 import {
@@ -45,8 +48,8 @@ const SCRIPT = path.join(webRoot, "scripts", "payments.mjs");
 const SECRET = "unlock-secret-for-tests-0123456789";
 const DAY = REFUND_MIN_AGE_MS;
 
-/** When the default test payment landed, in seconds like a node's blockTime. */
-const BLOCK_TIME = 1_763_000_000;
+/** When the default test payment landed, in seconds like a node's blockTime: 2026-11-18, after the launch. */
+const BLOCK_TIME = 1_795_000_000;
 const PAID_AT = BLOCK_TIME * 1000;
 /** The first moment a payment made at BLOCK_TIME may be refunded. */
 const LATER = PAID_AT + DAY;
@@ -54,9 +57,12 @@ const LATER = PAID_AT + DAY;
 const newAddress = () => encodeBase58(new Uint8Array(randomBytes(32)));
 const sigOf = (tx) => tx.transaction.signatures[0];
 
-/** paymentTx with a block time. chain.js gives every transaction the same one. */
-function payment({ blockTime = BLOCK_TIME, ...options } = {}) {
-  const tx = paymentTx(options);
+/**
+ * paymentTx with a block time (chain.js gives every transaction the same one)
+ * and, like every payment the page builds, a reference account of its own.
+ */
+function payment({ blockTime = BLOCK_TIME, references = [newClaim().reference], ...options } = {}) {
+  const tx = paymentTx({ references, ...options });
   tx.blockTime = blockTime;
   return tx;
 }
@@ -101,6 +107,23 @@ async function spendForGrind({ claim, signature, rpc, store, now = PAID_AT + 60_
 
 const check = (rpc, store, signature, now = LATER) => checkPayment({ rpc, store, now, payTo: PAY_TO, signature });
 const mark = (rpc, store, signature, now = LATER) => markRefunded({ rpc, store, now, payTo: PAY_TO, signature });
+
+/** Record which addresses an RPC is asked to list, and which transactions it is asked for. */
+function watched(rpc) {
+  const listed = [];
+  const read = [];
+  const list = rpc.getSignaturesForAddress;
+  const get = rpc.getTransaction;
+  rpc.getSignaturesForAddress = (address, options = {}) => {
+    listed.push({ address, before: options.before });
+    return list(address, options);
+  };
+  rpc.getTransaction = (signature) => {
+    read.push(signature);
+    return get(signature);
+  };
+  return { listed, read, of: (address) => listed.filter((call) => call.address === address).map((call) => call.before) };
+}
 
 async function collect(iterable) {
   const items = [];
@@ -148,7 +171,7 @@ test("check: an already marked payment is REFUNDED", async () => {
 
   const report = await check(datedRpc([tx]), store, sigOf(tx));
   assert.equal(report.verdict, REFUNDED);
-  assert.deepEqual(report.spent, { state: "refunded", at: LATER, payer: PAYER });
+  assert.deepEqual(report.spent, { state: "refunded", at: LATER, payer: PAYER, sentBack: null });
 });
 
 test("check: old-version records, as 34623f1 wrote them, under any account the payment names", async () => {
@@ -441,27 +464,29 @@ test("old-payments pages back past a full page, skips what landed at or after --
   const atUntil = payment({ blockTime: BLOCK_TIME });
   const after = payment({ blockTime: BLOCK_TIME + 100 });
   const rpc = datedRpc([...older, beforeSince, atSince, ...between, inside, lastBefore, atUntil, after]);
+  const seen = watched(rpc);
 
   const found = await collect(oldPayments({ rpc, store: memoryStore(), now: until + 2 * DAY, payTo: PAY_TO, until, since, payeeAccount: PAYEE_ATA }));
 
   assert.deepEqual(found.map((report) => report.signature), [lastBefore, inside, atSince].map(sigOf));
   assert.ok(found.every((report) => report.verdict === REFUNDABLE));
-  // Newest page, then one more from where it ended. The second page is full too, but the
-  // listing stops at the first transaction older than --since.
-  assert.equal(rpc.calls.getSignaturesForAddress, 2);
+  // The payee's account: newest page, then one more from where it ended. The second page is
+  // full too, but the listing stops at the first transaction older than --since.
   // Page one: after, atUntil, lastBefore, inside and between[999..4].
-  assert.deepEqual(rpc.befores, [undefined, sigOf(between[4])]);
-  // Failed transactions are never read.
-  assert.equal(rpc.calls.getTransaction, 3);
+  assert.deepEqual(seen.of(PAYEE_ATA), [undefined, sigOf(between[4])]);
+  // Failed transactions are never read, here or in the payer's history.
+  const failedSigs = new Set([...older, ...between].map(sigOf));
+  assert.equal(seen.read.filter((signature) => failedSigs.has(signature)).length, 0);
 });
 
 test("old-payments without --since walks to the oldest transaction", async () => {
   const filler = Array.from({ length: SIGNATURE_LIMIT + 5 }, () => payment({ blockTime: BLOCK_TIME - 50, err: { InstructionError: [0, "Custom"] } }));
   const first = payment({ blockTime: BLOCK_TIME - 10_000 });
   const rpc = datedRpc([first, ...filler]);
+  const seen = watched(rpc);
   const found = await collect(oldPayments({ rpc, store: memoryStore(), now: PAID_AT + DAY, payTo: PAY_TO, until: PAID_AT, payeeAccount: PAYEE_ATA }));
   assert.deepEqual(found.map((report) => report.signature), [sigOf(first)]);
-  assert.equal(rpc.calls.getSignaturesForAddress, 2);
+  assert.equal(seen.of(PAYEE_ATA).length, 2);
 });
 
 test("old-payments classifies each payment by the old records and spent/, and skips what does not pay", async () => {
@@ -493,7 +518,9 @@ test("old-payments classifies each payment by the old records and spent/, and sk
   const strange = payment({ references: [strangeRef], blockTime: t(6) });
   await store.create(strangeRef, { status: "consumed" });
 
-  // Not payments: a refund sent from the payee, a short payment, a failed one.
+  // Not payments: a refund sent from the payee, a short payment, a failed one. The refund
+  // went to PAYER with no mark, before `refunded` was marked: it was sent by hand, and
+  // answers PAYER's oldest unused, unmarked payment, `paid`.
   const refundSent = payment({
     blockTime: t(7),
     pre: [balance(1, 0, { owner: PAYER }), balance(2, 9_000_000)],
@@ -518,9 +545,10 @@ test("old-payments classifies each payment by the old records and spent/, and sk
     [sigOf(refunded)]: [REFUNDED, "none"],
     [sigOf(spent)]: [USED, "paid"],
     [sigOf(neverVerified)]: [REFUNDABLE, "none"],
-    [sigOf(paid)]: [REFUNDABLE, "paid"],
+    [sigOf(paid)]: [SENT_BACK, "paid"],
     [sigOf(consumed)]: [USED, "consumed"],
   });
+  assert.equal(found.find((report) => report.signature === sigOf(paid)).sentBack, sigOf(refundSent));
   assert.ok(found.filter((report) => report.verdict === REFUNDABLE).every((report) => report.payer === PAYER));
 });
 
@@ -670,7 +698,7 @@ test("run as a program with a failing RPC, no command prints the token or any pa
   const runs = [
     ["check", newSignature()],
     ["mark-refunded", newSignature()],
-    ["old-payments", "--until", "2026-01-01T00:00:00Z"],
+    ["old-payments", "--until", "2026-11-16T00:00:00Z"],
   ];
   const results = await Promise.all(
     runs.map((args) =>
@@ -733,4 +761,152 @@ test("the tool is not a function, no function imports it, and the built site doe
   } finally {
     fs.rmSync(out, { recursive: true, force: true });
   }
+});
+
+// ── Round 5 ───────────────────────────────────────────────────────────────────
+
+/** A transfer of exactly 1.00 USDC from the payee back to PAYER, as an operator sends a refund by hand. */
+function refundTx(blockTime) {
+  return payment({
+    references: [],
+    blockTime,
+    pre: [balance(1, 0, { owner: PAYER }), balance(2, 9_000_000)],
+    post: [balance(1, 1_000_000, { owner: PAYER }), balance(2, 8_000_000)],
+  });
+}
+
+test("a 1.00 USDC transfer that names no reference (a tip) is not a payment: check, mark-refunded and old-payments leave it alone", async () => {
+  const tip = payment({ references: [] });
+  // A sysvar is read-only and no signer, but it is never a reference.
+  const sysvarOnly = payment({ references: ["SysvarRent111111111111111111111111111111111"] });
+  const store = memoryStore();
+  const rpc = datedRpc([tip, sysvarOnly]);
+  for (const tx of [tip, sysvarOnly]) {
+    const report = await check(rpc, store, sigOf(tx));
+    assert.equal(report.verdict, NOT_A_PAYMENT);
+    assert.equal(report.reason, "no_reference");
+    assert.match(report.why, /names no reference account.*such as a tip, is not a payment/);
+    assert.equal((await mark(rpc, store, sigOf(tx))).marked, false);
+    assert.equal(await store.get(spentKey(sigOf(tx))), null);
+  }
+  assert.deepEqual(await collect(oldPayments({ rpc, store, now: LATER + DAY, payTo: PAY_TO, until: LATER, payeeAccount: PAYEE_ATA })), []);
+});
+
+test("old-payments starts at the launch unless told otherwise", async () => {
+  const launch = Math.floor(LAUNCH_AT / 1000);
+  assert.equal(new Date(LAUNCH_AT).toISOString(), "2026-11-15T14:37:02.000Z");
+  const beforeLaunch = payment({ blockTime: launch - 60 });
+  const afterLaunch = payment({ blockTime: launch + 60 });
+  const rpc = datedRpc([beforeLaunch, afterLaunch]);
+  const args = { rpc, store: memoryStore(), now: LATER, payTo: PAY_TO, until: PAID_AT, payeeAccount: PAYEE_ATA };
+  assert.deepEqual((await collect(oldPayments(args))).map((report) => report.signature), [sigOf(afterLaunch)]);
+  const all = await collect(oldPayments({ ...args, since: (launch - 3_600) * 1000 }));
+  assert.deepEqual(all.map((report) => report.signature), [sigOf(afterLaunch), sigOf(beforeLaunch)]);
+});
+
+test("a payment already refunded by hand is SENT_BACK: check says send nothing, mark-refunded records it, old-payments says so", async () => {
+  const first = payment({ blockTime: BLOCK_TIME - 600 });
+  const second = payment({ blockTime: BLOCK_TIME - 300 });
+  const byHand = refundTx(BLOCK_TIME - 100); // one refund, after both: it answers the older one
+  const store = memoryStore();
+  const rpc = datedRpc([first, second, byHand]);
+
+  const sent = await check(rpc, store, sigOf(first));
+  assert.equal(sent.verdict, SENT_BACK);
+  assert.equal(sent.sentBack, sigOf(byHand));
+  assert.match(sent.why, /already went back from the payee to the wallet that paid.*Send nothing/);
+  assert.equal((await check(rpc, store, sigOf(second))).verdict, REFUNDABLE);
+  const listed = await collect(oldPayments({ rpc, store, now: LATER, payTo: PAY_TO, until: PAID_AT, payeeAccount: PAYEE_ATA }));
+  assert.deepEqual(
+    listed.map((report) => [report.signature, report.verdict]),
+    [
+      [sigOf(second), REFUNDABLE],
+      [sigOf(first), SENT_BACK],
+    ]
+  );
+
+  const marked = await mark(rpc, store, sigOf(first));
+  assert.equal(marked.marked, true);
+  assert.equal(marked.alreadySent, sigOf(byHand));
+  assert.deepEqual(await store.get(spentKey(sigOf(first))), { refunded: true, at: LATER, payer: PAYER, sentBack: sigOf(byHand) });
+  // Marked, it is REFUNDED, and the hand refund still belongs to it, not to the next payment.
+  assert.equal((await check(rpc, store, sigOf(first))).verdict, REFUNDED);
+  assert.equal((await check(rpc, store, sigOf(second))).verdict, REFUNDABLE);
+
+  // Through the command line: nothing to send.
+  const { code, out } = await runMain(["mark-refunded", sigOf(first)], { rpc, store: memoryStore(), now: LATER });
+  assert.equal(code, 0, out);
+  assert.match(out, new RegExp(`already sent back in ${sigOf(byHand)}\\. Send nothing\\.`));
+  assert.doesNotMatch(out, /Send exactly/);
+});
+
+test("a refund sent after a payment was marked belongs to that payment; one sent before any mark answers the oldest unmarked one", async () => {
+  const marked = payment({ blockTime: BLOCK_TIME - 900 });
+  const unmarked = payment({ blockTime: BLOCK_TIME - 800 });
+  const afterMark = refundTx(BLOCK_TIME - 100);
+  const rpc = datedRpc([marked, unmarked, afterMark]);
+  // The runbook marks first and sends second: the refund after the mark is the marked payment's.
+  const store = memoryStore();
+  await store.create(spentKey(sigOf(marked)), { refunded: true, at: (BLOCK_TIME - 200) * 1000, payer: PAYER });
+  assert.equal((await check(rpc, store, sigOf(unmarked))).verdict, REFUNDABLE);
+
+  // The same refund sent before the mark was written was a hand refund of the oldest unmarked payment.
+  const early = memoryStore();
+  await early.create(spentKey(sigOf(marked)), { refunded: true, at: (BLOCK_TIME - 50) * 1000, payer: PAYER });
+  const report = await check(rpc, early, sigOf(unmarked));
+  assert.equal(report.verdict, SENT_BACK);
+  assert.equal(report.sentBack, sigOf(afterMark));
+});
+
+// SOL payments of the launch versions.
+const SYSTEM = "11111111111111111111111111111111";
+function solTx({ from, to, lamports, references = [], blockTime = BLOCK_TIME, fee = 5_000, err = null }) {
+  const keys = [from, to, ...references, SYSTEM];
+  const pre = [10_000_000_000, 5_000_000_000, ...references.map(() => 0), 1];
+  const post = [pre[0] - lamports - fee, pre[1] + lamports, ...references.map(() => 0), 1];
+  return {
+    slot: 300_000_000,
+    blockTime,
+    meta: { err, fee, preBalances: pre, postBalances: post, preTokenBalances: [], postTokenBalances: [] },
+    transaction: {
+      signatures: [newSignature()],
+      message: {
+        accountKeys: keys.map((pubkey, i) => ({ pubkey, signer: i === 0, writable: i < 2, source: "transaction" })),
+        instructions: [{ programId: SYSTEM }],
+      },
+    },
+  };
+}
+
+test("old-sol-payments lists the launch versions' SOL payments nothing used, with the wallet and the exact SOL to send back", async () => {
+  const store = memoryStore();
+  const t = (offset) => BLOCK_TIME - 3_600 + offset;
+  const usedRef = newAddress();
+  const used = solTx({ from: PAYER, to: PAY_TO, lamports: 7_000_000, references: [usedRef], blockTime: t(1) });
+  await store.create(usedRef, { status: "consumed", asset: "sol", signature: sigOf(used), at: 1 });
+  const paidRef = newAddress();
+  const paid = solTx({ from: PAYER, to: PAY_TO, lamports: 6_500_000, references: [paidRef], blockTime: t(2) });
+  await store.create(paidRef, { status: "paid", asset: "sol", signature: sigOf(paid), at: 1 });
+  const other = newAddress();
+  const neverVerified = solTx({ from: other, to: PAY_TO, lamports: 6_400_000, references: [newAddress()], blockTime: t(3) });
+  const tip = solTx({ from: other, to: PAY_TO, lamports: 6_400_000, blockTime: t(4) });
+  const handRefund = solTx({ from: PAY_TO, to: other, lamports: 6_400_000, blockTime: t(5) });
+  const failed = solTx({ from: PAYER, to: PAY_TO, lamports: 6_300_000, references: [newAddress()], blockTime: t(6), err: { InstructionError: [0, "Custom"] } });
+  const afterUntil = solTx({ from: PAYER, to: PAY_TO, lamports: 6_000_000, references: [newAddress()], blockTime: BLOCK_TIME + 10 });
+  const rpc = datedRpc([used, paid, neverVerified, tip, handRefund, failed, afterUntil]);
+
+  const found = await collect(oldSolPayments({ rpc, store, now: LATER, payTo: PAY_TO, until: PAID_AT }));
+  const seen = Object.fromEntries(found.map((r) => [r.signature, [r.verdict, r.payer, r.lamports, r.oldState]]));
+  assert.deepEqual(seen, {
+    [sigOf(used)]: [USED, PAYER, 7_000_000, "consumed"],
+    [sigOf(paid)]: [REFUNDABLE, PAYER, 6_500_000, "paid"],
+    [sigOf(neverVerified)]: [SENT_BACK, other, 6_400_000, "none"],
+  });
+  assert.equal(found.find((r) => r.signature === sigOf(neverVerified)).sentBack, sigOf(handRefund));
+
+  const { code, out } = await runMain(["old-sol-payments", "--until", new Date(PAID_AT).toISOString()], { rpc, store, now: LATER });
+  assert.equal(code, 0, out);
+  assert.match(out, new RegExp(`\n${sigOf(paid)}  ${new Date(t(2) * 1000).toISOString()}  ${PAYER}  0\\.006500000  paid  ${REFUNDABLE}\n`));
+  assert.match(out, /Listed 2\. Not listed: 1 used for a grind\./);
+  assert.ok(!out.includes(sigOf(tip)) && !out.includes(sigOf(afterUntil)) && !out.includes(sigOf(failed)), out);
 });

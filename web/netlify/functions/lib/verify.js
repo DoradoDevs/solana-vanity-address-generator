@@ -77,6 +77,12 @@ async function judgePointed({ rpc, store, reference, signature, payTo }) {
  * reference after the payment delays the answer by a few calls; it cannot
  * hide the payment.
  *
+ * The cursor names the second-oldest row the call listed, never the oldest:
+ * a node lists strictly before the cursor, so the oldest row is listed again
+ * by the next call and every row is listed at least once. (A cursor naming
+ * the oldest row would skip that row for good, and with a history of exactly
+ * a whole number of calls' worth, that row is the payment.)
+ *
  * "Not found" is only said after the whole history was listed in one call
  * and every successful row in it was read. A search that started from a
  * cursor skipped newer rows it never read, so it can say "cannot tell", never
@@ -86,8 +92,9 @@ async function searchReference({ rpc, store, reference, payTo, cursor }) {
   let rows = [];
   let before = cursor;
   let atOldestEnd = false;
+  let listed = [];
   for (let page = 0; page < REFERENCE_PAGES; page++) {
-    const listed = await rpc.getSignaturesForAddress(reference, before ? { before } : {});
+    listed = await rpc.getSignaturesForAddress(reference, before ? { before } : {});
     rows = rows.concat(listed);
     if (listed.length < SIGNATURE_LIMIT) {
       atOldestEnd = true;
@@ -95,7 +102,7 @@ async function searchReference({ rpc, store, reference, payTo, cursor }) {
     }
     before = listed[listed.length - 1].signature;
   }
-  if (!atOldestEnd) return { ...SEARCHING, cursor: before };
+  if (!atOldestEnd) return { ...SEARCHING, cursor: listed[listed.length - 2].signature };
   if (rows.length === 0) return cursor === undefined ? NOT_FOUND : CANNOT_TELL;
 
   let pending = false;

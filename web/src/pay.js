@@ -10,7 +10,7 @@
  */
 import { getWallets } from "@wallet-standard/app";
 import { NETWORK_FEE_NOTE, PAY_ERRORS, messageForWalletError } from "../../shared/pay-copy.js";
-import { browserStorage, createPayFlow } from "./pay-flow.js";
+import { POST_TIMEOUT_MS, browserStorage, createPayFlow } from "./pay-flow.js";
 import { offerInAppBrowserLinks, phantomBrowseUrl, solflareBrowseUrl } from "./wallet-links.js";
 
 const PREFERRED = ["Phantom", "Solflare", "Backpack"];
@@ -41,14 +41,31 @@ const RESUMING = "Checking the payment you already started…";
 const REFUSED =
   "The payment the server built is not exactly 1.00 USDC to VanityGrinder's address, so this page did not send it to your wallet. Nothing was charged. If the site was just updated, reload the page and try again.";
 
-async function post(name, body) {
-  const response = await fetch(`/api/${name}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = await response.json().catch(() => ({}));
-  return { status: response.status, data };
+/**
+ * POST to a function. Rejects when no answer came: a dropped connection, or
+ * none within `timeoutMs` (the request is aborted then). A spend renews its
+ * lease between requests, so no request may outlast the lease. A timer and an
+ * AbortController, not AbortSignal.timeout: browsers old enough to lack Web
+ * Locks, where the lease is used, lack that too.
+ */
+export async function post(name, body, { timeoutMs = POST_TIMEOUT_MS } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(`/api/${name}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    const data = await response.json().catch((error) => {
+      if (controller.signal.aborted) throw error;
+      return {};
+    });
+    return { status: response.status, data };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const flow = createPayFlow({ storage: browserStorage(), post });
@@ -78,7 +95,7 @@ function watchingText(state, info) {
   if (state !== "unseen" || info.signature || info.giveUpIn === null) return WATCHING[state];
   const left = minutesAndSeconds(info.giveUpIn);
   if (info.walletError) {
-    return `Your wallet reported an error, so this page is making sure no payment went out before you pay again. Up to ${left} left.`;
+    return `Your wallet reported an error, but a wallet can report one even after the payment went out (for example "Blockhash not found" on a retry), so this page is making sure none did before you pay again. Up to ${left} left.`;
   }
   return `Looking for a payment from this attempt. If none has landed, you can pay again in ${left} at most.`;
 }

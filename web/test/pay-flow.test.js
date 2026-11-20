@@ -985,3 +985,123 @@ test("a fresh token fetched while another tab replaced the attempt is never save
   assert.equal(tab.flow.pending().claim, newer);
   assert.equal(tab.flow.pending().token, null);
 });
+
+// ── Round 5: a lease that lasts as long as its spend ──────────────────────────
+
+/** A sleep on a clock two tabs share: time moves for both, and timers still run. */
+function sharedSleep(clock) {
+  let sleeps = 0;
+  return async (ms) => {
+    if (++sleeps > MAX_SLEEPS) throw new Error(`the flow never settled: ${MAX_SLEEPS} sleeps`);
+    clock.now += ms;
+    await yieldToTimers();
+  };
+}
+
+test("without Web Locks a spend that outlasts LEASE_MS renews its lease before each request: the other tab waits, one grind", async () => {
+  const storage = fakeStorage();
+  const clock = { now: 1_000_000 };
+  const server = realServer();
+  const options = { storage, now: () => clock.now, sleep: sharedSleep(clock), locks: null };
+  const B = createPayFlow({ ...options, post: server.post("B") });
+  let pb = null;
+  let attempts = 0;
+  const A = createPayFlow({
+    ...options,
+    post: async (name, body) => {
+      attempts += 1;
+      if (attempts === 1) {
+        clock.now += 100_000; // a slow answer that never came
+        return answers.down;
+      }
+      // The second attempt is slow too, and tab B starts a grind while it is on its way.
+      pb = B.unlock({ claim, ...server.issue() });
+      for (let i = 0; i < 20; i++) {
+        await yieldToTimers();
+        clock.now += 5_000;
+      }
+      return server.post("A")(name, body);
+    },
+  });
+  const claim = A.begin();
+  A.markSent(undefined, claim);
+  assert.deepEqual(await A.unlock({ claim, ...server.issue() }), { ok: true });
+  assert.deepEqual(await pb, { ok: false, reason: "elsewhere" });
+  assert.ok(clock.now - 1_000_000 > LEASE_MS, "the spend outlasted one lease");
+  assert.deepEqual(server.oks, ["A"]);
+  assert.equal(storage.map.has(`${SPEND_LOCK}-lease`), false);
+});
+
+test("without Web Locks a tab that lost its lease (frozen past LEASE_MS) sends nothing more", async () => {
+  const storage = fakeStorage();
+  const clock = { now: 1_000_000 };
+  const server = realServer();
+  const options = { storage, now: () => clock.now, sleep: sharedSleep(clock), locks: null };
+  const B = createPayFlow({ ...options, post: server.post("B") });
+  let pb = null;
+  const sentByA = [];
+  const A = createPayFlow({
+    ...options,
+    post: async (name, body) => {
+      sentByA.push(body.token);
+      if (sentByA.length === 1) {
+        // The tab is frozen past its lease; tab B takes over and spends the saved token.
+        clock.now += LEASE_MS + 1;
+        pb = B.unlock({ claim, ...server.issue() });
+        assert.deepEqual(await pb, { ok: true });
+        return answers.down;
+      }
+      return server.post("A")(name, body);
+    },
+  });
+  const claim = A.begin();
+  A.markSent(undefined, claim);
+  assert.deepEqual(await A.unlock({ claim, ...server.issue() }), { ok: false, reason: "elsewhere" });
+  assert.equal(sentByA.length, 1);
+  assert.deepEqual(server.oks, ["B"]);
+});
+
+test("without Web Locks two tabs that both find no lease and write one at once: only the last writer spends", async () => {
+  const storage = fakeStorage();
+  const leaseKey = `${SPEND_LOCK}-lease`;
+  /** One tab's view of the shared storage: its first look at the lease happens before the other tab's write lands. */
+  const tabView = () => {
+    let looked = false;
+    return {
+      getItem: (key) => {
+        if (key === leaseKey && !looked) {
+          looked = true;
+          return null;
+        }
+        return storage.getItem(key);
+      },
+      setItem: (key, value) => storage.setItem(key, value),
+      removeItem: (key) => storage.removeItem(key),
+    };
+  };
+  const clock = { now: 1_000_000 };
+  const server = realServer();
+  const sent = [];
+  const tab = (name) =>
+    createPayFlow({
+      storage: tabView(),
+      now: () => clock.now,
+      sleep: sharedSleep(clock),
+      random: (n) => Uint8Array.from({ length: n }, (_, i) => (i + name.charCodeAt(0)) % 256),
+      locks: null,
+      post: async (route, body) => {
+        sent.push([name, body.token]);
+        return server.post(name)(route, body);
+      },
+    });
+  const A = tab("A");
+  const B = tab("B");
+  const claim = A.begin();
+  A.markSent(undefined, claim);
+  const tokenB = server.issue();
+  const results = await Promise.all([A.unlock({ claim, ...server.issue() }), B.unlock({ claim, ...tokenB })]);
+  // B spent its own token: A never ran its spend at all, so it saved no token of its own for B to find.
+  assert.deepEqual(sent, [["B", tokenB.token]]);
+  assert.deepEqual(server.oks, ["B"]);
+  assert.deepEqual(results, [{ ok: false, reason: "elsewhere" }, { ok: true }]);
+});
