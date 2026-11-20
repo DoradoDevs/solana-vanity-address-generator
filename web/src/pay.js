@@ -36,7 +36,7 @@ const ELSEWHERE = "That payment was already used, or given up, in another tab of
 const STOPPED =
   "Stopped waiting. If a payment was sent, it is saved in this browser and will be found the next time you reach this step.";
 const CANCELLED = "Payment cancelled. Nothing was charged for this attempt.";
-const ALREADY_PAID = "This browser already holds a paid grind. Finish the setup in the terminal to start it.";
+const ALREADY_PAID = "This browser already holds a paid grind. Set a pattern and press Start grinding to use it.";
 const RESUMING = "Checking the payment you already started…";
 const REFUSED =
   "The payment the server built is not exactly 1.00 USDC to VanityGrinder's address, so this page did not send it to your wallet. Nothing was charged. If the site was just updated, reload the page and try again.";
@@ -112,9 +112,9 @@ function showNotice(kind, text, actionLabel, onAction) {
   clearNotice(kind);
   const box = document.createElement("div");
   box.id = `pay-notice-${kind}`;
-  box.className = "pay-mobile-help";
+  box.className = "note vg-notice";
   const note = document.createElement("p");
-  note.className = "pay-mobile-note";
+  note.className = "vg-notice__text";
   for (const part of Array.isArray(text) ? text : [text]) {
     if (typeof part === "string") {
       note.append(part);
@@ -128,7 +128,7 @@ function showNotice(kind, text, actionLabel, onAction) {
   box.appendChild(note);
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "pay-wallet";
+  button.className = "btn btn--sm";
   button.textContent = actionLabel;
   button.addEventListener("click", onAction);
   box.appendChild(button);
@@ -225,9 +225,9 @@ function offerWalletBrowser() {
 
 function renderInAppHelp(list) {
   const help = document.createElement("div");
-  help.className = "pay-mobile-help";
+  help.className = "vg-wallets__help";
   const note = document.createElement("p");
-  note.className = "pay-mobile-note";
+  note.className = "hint";
   note.textContent =
     "On a phone, connect from the Phantom or Solflare in-app browser. Open this page there, then tap Connect wallet.";
   const pageUrl = location.href;
@@ -236,7 +236,7 @@ function renderInAppHelp(list) {
     ["Open in Solflare", solflareBrowseUrl(pageUrl)],
   ]) {
     const link = document.createElement("a");
-    link.className = "pay-wallet";
+    link.className = "btn";
     link.href = href;
     link.rel = "noopener noreferrer";
     link.textContent = label;
@@ -303,7 +303,7 @@ function renderWallets() {
   for (const wallet of wallets) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "pay-wallet";
+    button.className = "btn";
     button.textContent = wallet.name;
     button.addEventListener("click", () => payWithWallet(wallet));
     list.appendChild(button);

@@ -5,72 +5,53 @@ import {
   formatAttempts,
   formatDuration,
   formatEstimate,
+  formatOdds,
+  formatProbability,
+  foundByNowProbability,
   DEFAULT_KEYS_PER_THREAD,
   ADDRESS_LENGTH,
 } from "../../shared/grind-math.js";
 import { isLongPattern, isPublishableTipAddress, resolveBatch } from "../../shared/pro.js";
 import { consumePaidGrind, ensurePaid, initPay, spendInProgress } from "./pay.js";
 import { confirmUnload } from "./unload.js";
+import { matchRange, previewParts, splitAtMatch } from "./match-view.js";
 
-const output = document.getElementById("output");
-const inputLine = document.getElementById("input-line");
-const inputEl = document.getElementById("input");
-const stopBtn = document.getElementById("stop-btn");
-const liveStatus = document.getElementById("live-status");
+const $ = (id) => document.getElementById(id);
 
-const BASE58_CHARS =
-  "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const output = $("output");
+const stopBtn = $("stop-btn");
+const liveStatus = $("live-status");
+const form = $("setup");
+const patternEl = $("pattern");
+const threadsEl = $("threads");
+const batchEl = $("batch");
+const caseEl = $("case");
+const jobEl = $("job");
+const gate = $("pay-gate");
+const runState = $("run-state");
+const readouts = $("readouts");
+const roRate = $("ro-rate");
+const roAttempts = $("ro-attempts");
+const roChance = $("ro-chance");
+const addrLabel = $("addr-label");
+const addrEl = $("addr");
+const addrCopy = $("addr-copy");
 
-// ── Matrix rain (paused while grinding so cores stay on keys) ──
-
-let matrixPaused = false;
-
-function setMatrixPaused(paused) {
-  matrixPaused = paused;
-}
-
-function initMatrix() {
-  const canvas = document.getElementById("matrix-bg");
-  if (!canvas) return;
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    canvas.remove();
-    return;
-  }
-  const ctx = canvas.getContext("2d");
-  const fontSize = 14;
-
-  function resize() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-  }
-  resize();
-
-  let columns = Math.max(1, Math.floor(canvas.width / fontSize));
-  let drops = new Array(columns).fill(1);
-
-  window.addEventListener("resize", () => {
-    resize();
-    columns = Math.max(1, Math.floor(canvas.width / fontSize));
-    drops = new Array(columns).fill(1);
-  });
-
-  setInterval(() => {
-    if (matrixPaused || document.hidden) return;
-    ctx.fillStyle = "rgba(0, 0, 0, 0.12)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#00ff41";
-    ctx.font = `${fontSize}px monospace`;
-    for (let i = 0; i < drops.length; i++) {
-      const char = BASE58_CHARS[Math.floor(Math.random() * BASE58_CHARS.length)];
-      ctx.fillText(char, i * fontSize, drops[i] * fontSize);
-      if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) drops[i] = 0;
-      drops[i]++;
-    }
-  }, 120);
-}
+const POSITION_WORDS = {
+  prefix: "Prefix, the start",
+  suffix: "Suffix, the end",
+  "prefix-or-suffix": "Either end",
+  anywhere: "Anywhere",
+};
 
 function announce(text) {
   if (liveStatus) liveStatus.textContent = text;
+}
+
+/** A short confirmation. Never an error and never a key: those go in the console. */
+function toast(text) {
+  if (window.QT?.toast) window.QT.toast(text);
+  else announce(text);
 }
 
 // ── Security: CSPRNG required ────────────────────────
@@ -81,17 +62,11 @@ if (typeof crypto === "undefined" || typeof crypto.getRandomValues !== "function
   throw new Error("No CSPRNG available");
 }
 
-// ── Terminal helpers (textContent only) ──────────────
-
-function isNarrow() {
-  return window.matchMedia("(max-width: 800px)").matches;
-}
+// ── Console helpers (textContent only) ───────────────
 
 function terminalColumns() {
-  const terminal = document.getElementById("terminal");
-  if (!terminal || terminal.clientWidth < 40) return isNarrow() ? 28 : 80;
-  const sample = document.getElementById("output") || terminal;
-  const style = getComputedStyle(sample);
+  if (!output || output.clientWidth < 40) return 28;
+  const style = getComputedStyle(output);
   const probe = document.createElement("span");
   probe.textContent = "0000000000";
   probe.style.position = "absolute";
@@ -101,10 +76,13 @@ function terminalColumns() {
   document.body.appendChild(probe);
   const char = probe.getBoundingClientRect().width / 10 || 8;
   probe.remove();
-  const termStyle = getComputedStyle(terminal);
-  const pad =
-    (parseFloat(termStyle.paddingLeft) || 0) + (parseFloat(termStyle.paddingRight) || 0);
-  return Math.max(18, Math.floor((terminal.clientWidth - pad - 8) / char));
+  const pad = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+  return Math.max(18, Math.floor((output.clientWidth - pad - 8) / char));
+}
+
+/** Under 64 columns the console prints one fact per line instead of a row of them. */
+function isNarrow() {
+  return terminalColumns() < 64;
 }
 
 function boxWidth() {
@@ -132,19 +110,42 @@ function bannerSubtitle(width) {
   return "On this device";
 }
 
+/** A framed banner, its rows set solid so the box joins with no gaps. */
+function printBox(rows) {
+  const box = document.createElement("div");
+  box.className = "console__box vg-line vg-box";
+  box.textContent = rows.join("\n");
+  output.appendChild(box);
+  scrollToBottom();
+}
+
 function printRule() {
-  if (!isNarrow()) {
-    print("  ─────────────────────────────────────────", "dim");
-    return;
-  }
   const count = Math.max(8, Math.min(41, terminalColumns() - 2));
   print(`  ${"─".repeat(count)}`, "dim");
 }
 
 function print(text = "", cls = "") {
   const div = document.createElement("div");
-  div.className = "line" + (cls ? " " + cls : "");
+  div.className = "vg-line" + (cls ? " " + cls : "");
   div.textContent = text;
+  output.appendChild(div);
+  scrollToBottom();
+  return div;
+}
+
+/** A line whose pattern is marked: the matched address, drawn as text nodes. */
+function printAddress(label, address, range) {
+  const div = document.createElement("div");
+  div.className = "vg-line";
+  const [before, hit, after] = splitAtMatch(address, range);
+  div.append(label, before);
+  if (hit) {
+    const mark = document.createElement("mark");
+    mark.className = "match";
+    mark.textContent = hit;
+    div.append(mark);
+  }
+  div.append(after);
   output.appendChild(div);
   scrollToBottom();
   return div;
@@ -158,16 +159,47 @@ function clearOutput() {
   output.replaceChildren();
 }
 
-function showToast(text) {
-  let toast = document.getElementById("toast");
-  if (!toast) {
-    toast = document.createElement("div");
-    toast.id = "toast";
-    document.body.appendChild(toast);
+// ── The address above the console: a preview, then the match ──
+
+function drawAddress(parts, { dim = true } = {}) {
+  const [before, hit, after] = parts;
+  const nodes = [];
+  for (const [text, isHit] of [[before, false], [hit, true], [after, false]]) {
+    if (!text) continue;
+    if (isHit) {
+      const mark = document.createElement("mark");
+      mark.className = "match";
+      mark.textContent = text;
+      nodes.push(mark);
+    } else if (dim) {
+      const span = document.createElement("span");
+      span.className = "vg-addr__dots";
+      span.textContent = text;
+      nodes.push(span);
+    } else {
+      nodes.push(document.createTextNode(text));
+    }
   }
-  toast.textContent = text;
-  toast.classList.add("show");
-  setTimeout(() => toast.classList.remove("show"), 2500);
+  addrEl.replaceChildren(...nodes);
+}
+
+function showPreview() {
+  const pattern = patternEl.value.trim();
+  const position = selectedPosition();
+  addrCopy.hidden = true;
+  if (!pattern || validatePattern(pattern).length > 0) {
+    addrLabel.textContent = "Preview";
+    drawAddress(["·".repeat(ADDRESS_LENGTH), "", ""]);
+    return;
+  }
+  addrLabel.textContent = position === "prefix-or-suffix" ? "Preview, either end" : "Preview";
+  drawAddress(previewParts(pattern, position));
+}
+
+function showFound(address, range, label) {
+  addrLabel.textContent = label;
+  drawAddress(splitAtMatch(address, range), { dim: false });
+  addrCopy.hidden = false;
 }
 
 // ── Clipboard ────────────────────────────────────────
@@ -178,30 +210,21 @@ let clipboardTimer = null;
 async function copyPrivateKey(text) {
   try {
     await navigator.clipboard.writeText(text);
-    showToast("Copied. Clipboard clears in 60s if the browser allows it.");
+    toast("Copied. Clipboard clears in 60s if the browser allows it.");
     if (clipboardTimer) clearTimeout(clipboardTimer);
     clipboardTimer = setTimeout(async () => {
       try {
         const current = await navigator.clipboard.readText();
         if (current === text) {
           await navigator.clipboard.writeText("");
-          showToast("Clipboard cleared.");
+          toast("Clipboard cleared.");
         }
       } catch {
         /* readback is optional; the on-screen wipe still runs */
       }
     }, CLIPBOARD_CLEAR_MS);
   } catch {
-    showToast("Copy failed. Select the key and copy it yourself.");
-  }
-}
-
-async function copyPublic(text) {
-  try {
-    await navigator.clipboard.writeText(text);
-    showToast("Address copied.");
-  } catch {
-    showToast("Copy failed. Select the address instead.");
+    print("  Copy failed. Select the key and copy it yourself.", "warn");
   }
 }
 
@@ -211,103 +234,72 @@ function scheduleKeyRedaction(keyElement) {
   setTimeout(() => {
     if (!keyElement.isConnected) return;
     keyElement.textContent = "  Private Key: [REDACTED]";
-    keyElement.classList.remove("key");
-    keyElement.classList.add("dim");
+    keyElement.classList.remove("vg-key--shown");
+    keyElement.classList.add("vg-key--redacted");
     keyElement.disabled = true;
     keyElement.replaceWith(keyElement.cloneNode(true));
   }, KEY_VISIBLE_MS);
 }
 
-// ── Input ────────────────────────────────────────────
+// ── The generator's phases ───────────────────────────
+// setup: the form. measuring and pay: the job is fixed, the wallet is asked.
+// grinding: workers run. holding: a key is on this tab and not yet wiped.
 
-let resolveInput = null;
+const PILL = {
+  setup: ["Ready", ""],
+  stopped: ["Stopped", ""],
+  measuring: ["Measuring this device", "pill--running"],
+  pay: ["Waiting for payment", "pill--info"],
+  grinding: ["Grinding", "pill--running"],
+  holding: ["Match found", "pill--ok"],
+};
 
-function waitForInput(prompt = "> ") {
-  document.getElementById("prompt").textContent = prompt;
-  inputLine.classList.remove("hidden");
-  inputEl.value = "";
-  renderChoices(prompt);
-  inputEl.focus({ preventScroll: true });
-  return new Promise((resolve) => {
-    resolveInput = resolve;
-  });
+function setPhase(phase, pill = phase) {
+  const inSetup = phase === "setup";
+  form.hidden = !inSetup;
+  jobEl.hidden = inSetup;
+  gate.dataset.step = phase === "pay" ? "pay" : "idle";
+  gate.dataset.phase = phase;
+  const [word, tone] = PILL[pill];
+  runState.textContent = word;
+  runState.className = "pill" + (tone ? " " + tone : "");
+  readouts.dataset.state = phase === "grinding" ? "running" : phase === "holding" ? "done" : "idle";
+  $("job-note").textContent =
+    phase === "holding"
+      ? "Reveal and save the key in the console. The generator is free again when the console clears."
+      : "";
 }
 
-function hideInput() {
-  inputLine.classList.add("hidden");
-  const bar = document.getElementById("choice-bar");
-  if (bar) {
-    bar.hidden = true;
-    bar.replaceChildren();
-  }
+function selectedPosition() {
+  return form.querySelector('input[name="position"]:checked')?.value || "suffix";
 }
 
-function commitInput(val) {
-  if (!resolveInput) return;
-  print(`${document.getElementById("prompt").textContent}${val}`);
-  inputEl.value = "";
-  const resolve = resolveInput;
-  resolveInput = null;
-  resolve(val);
+function renderSummary(job) {
+  const rows = [
+    ["Pattern", job.pattern, true],
+    ["Position", POSITION_WORDS[job.position], false],
+    ["Case", job.caseSensitive ? "Matched" : "Ignored", false],
+    ["Threads", String(job.threads), false],
+  ];
+  if (job.batch > 1) rows.push(["Matches", String(job.batch), false]);
+  rows.push(["Odds", formatOdds(job.attempts), false]);
+  $("job-summary").replaceChildren(
+    ...rows.map(([key, value, mono]) => {
+      const row = document.createElement("div");
+      const dt = document.createElement("dt");
+      dt.textContent = key;
+      const dd = document.createElement("dd");
+      dd.textContent = value;
+      if (mono) dd.className = "mono";
+      row.append(dt, dd);
+      return row;
+    })
+  );
 }
 
-const CHOICE_SETS = [
-  {
-    test: (prompt) => prompt.includes("Choice [1/2/3/4]"),
-    options: [
-      ["1", "Prefix"],
-      ["2", "Suffix"],
-      ["3", "Either end"],
-      ["4", "Anywhere"],
-    ],
-  },
-  {
-    test: (prompt) => prompt.includes("Case sensitive"),
-    options: [
-      ["n", "Ignore case"],
-      ["y", "Match case"],
-    ],
-  },
-  {
-    test: (prompt) => prompt.includes("Grind another"),
-    options: [
-      ["Y", "Yes"],
-      ["n", "No"],
-    ],
-  },
-];
-
-function renderChoices(prompt) {
-  const bar = document.getElementById("choice-bar");
-  if (!bar) return;
-  bar.replaceChildren();
-  const spec = isNarrow() ? CHOICE_SETS.find((item) => item.test(prompt)) : null;
-  if (!spec) {
-    bar.hidden = true;
-    return;
-  }
-  bar.hidden = false;
-  for (const [value, label] of spec.options) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "choice";
-    button.textContent = label;
-    button.addEventListener("click", () => commitInput(value));
-    bar.appendChild(button);
-  }
+function focusQuietly(el) {
+  el?.focus({ preventScroll: true });
 }
-
-inputEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") commitInput(inputEl.value);
-});
-
-inputEl.addEventListener("focus", () => {
-  if (isNarrow()) inputEl.scrollIntoView({ block: "center" });
-});
-
-document.getElementById("terminal").addEventListener("click", () => {
-  if (!inputLine.classList.contains("hidden")) inputEl.focus();
-});
 
 // ── Grinding ─────────────────────────────────────────
 
@@ -317,26 +309,29 @@ let startTime = 0;
 let foundCount = 0;
 let targetCount = 1;
 let grinding = false;
-let estimatedAttempts = Infinity;
+let perMatchAttempts = Infinity;
+let attemptsAtLastMatch = 0;
 let workerErrors = 0;
 let progressTimer = null;
 let clearCountdownTimer = null;
 let progressLine = null;
+let progressText = null;
+let currentJob = null;
 /** A matched key exists in this tab and has not been wiped yet. */
 let holdingKey = false;
-/** The run is over, so nothing more will be added to the terminal. */
+/** The run is over, so nothing more will be added to the console. */
 let runFinished = false;
 /** At least one key has been put on screen. The wipe countdown waits for this. */
 let keyRevealed = false;
 
 function stopWorkers() {
   grinding = false;
-  setMatrixPaused(false);
   if (stopBtn) stopBtn.hidden = true;
   if (progressTimer) {
     clearTimeout(progressTimer);
     progressTimer = null;
   }
+  progressLine?.querySelector(".console__cursor")?.remove();
   for (const worker of workers) {
     try {
       worker.postMessage({ command: "stop" });
@@ -348,29 +343,28 @@ function stopWorkers() {
   workers = [];
 }
 
+function resetReadouts() {
+  roRate.textContent = "0";
+  roAttempts.textContent = "0";
+  roChance.textContent = "0%";
+}
+
+/** The readouts and the console's progress line. At most twice a second (scheduleProgress). */
 function updateProgress() {
-  if (!progressLine) return;
+  if (!progressText) return;
   const elapsed = (Date.now() - startTime) / 1000;
   const rate = elapsed > 0 ? totalAttempts / elapsed : 0;
-  let eta = "";
-  if (rate > 0 && Number.isFinite(estimatedAttempts) && estimatedAttempts > totalAttempts) {
-    eta = ` | ETA: ${formatEstimate((estimatedAttempts - totalAttempts) / rate)}`;
-  }
   const checked = formatAttempts(totalAttempts);
   const rateText = formatAttempts(Math.round(rate));
+  roRate.textContent = rateText;
+  roAttempts.textContent = checked;
+  roChance.textContent = formatProbability(
+    foundByNowProbability(totalAttempts - attemptsAtLastMatch, perMatchAttempts)
+  );
   const timeText = formatDuration(elapsed);
-  if (isNarrow()) {
-    const lines = [
-      `  Checked: ${checked}`,
-      `  Rate: ${rateText}/s`,
-      `  Time: ${timeText}`,
-    ];
-    if (eta) lines.push(`  ETA: ${eta.slice(" | ETA: ".length)}`);
-    progressLine.textContent = lines.join("\n");
-    return;
-  }
-  progressLine.textContent =
-    `  Checked: ${checked} | Rate: ${rateText}/s | Time: ${timeText}${eta}`;
+  progressText.textContent = isNarrow()
+    ? `  Checked: ${checked}\n  Rate: ${rateText}/s\n  Time: ${timeText}`
+    : `  Checked: ${checked} | Rate: ${rateText}/s | Time: ${timeText}`;
 }
 
 function scheduleProgress() {
@@ -378,16 +372,12 @@ function scheduleProgress() {
   progressTimer = setTimeout(() => {
     progressTimer = null;
     updateProgress();
-  }, 200);
+  }, 500);
 }
 
 function startClearCountdown() {
   let remaining = 60;
-  const countdownLine = document.createElement("div");
-  countdownLine.className = "line dim";
-  countdownLine.textContent = `  Terminal clears in ${remaining}s.`;
-  output.appendChild(countdownLine);
-  scrollToBottom();
+  const countdownLine = print(`  Terminal clears in ${remaining}s.`, "dim");
 
   clearCountdownTimer = setInterval(() => {
     remaining--;
@@ -398,7 +388,7 @@ function startClearCountdown() {
       clearOutput();
       print("  Terminal cleared. The key is no longer on screen.", "dim");
       print();
-      promptRestart();
+      backToSetup("stopped", { another: true });
     } else {
       countdownLine.textContent = `  Terminal clears in ${remaining}s.`;
     }
@@ -406,22 +396,23 @@ function startClearCountdown() {
 }
 
 function showMatch(msg) {
+  const range = matchRange(msg.address, currentJob.pattern, currentJob.position, currentJob.caseSensitive);
   if (targetCount === 1) {
     print();
     const width = boxWidth();
-    print(boxTop(width), "box glow");
-    print(boxMid("MATCH FOUND", width), "box glow");
-    print(boxBot(width), "box glow");
+    printBox([boxTop(width), boxMid("MATCH FOUND", width), boxBot(width)]);
+    showFound(msg.address, range, "Found address");
   } else {
     print();
-    print(`  Match ${foundCount} of ${targetCount}`, "bright");
+    print(`  Match ${foundCount} of ${targetCount}`);
+    showFound(msg.address, range, `Match ${foundCount} of ${targetCount}`);
   }
   print();
   if (isNarrow()) {
-    print("  Address:", "bright");
-    print(`  ${msg.address}`, "bright");
+    print("  Address:");
+    printAddress("  ", msg.address, range);
   } else {
-    print(`  Address:     ${msg.address}`, "bright");
+    printAddress("  Address:     ", msg.address, range);
   }
 
   // The key stays off the screen until it is asked for. A grind can finish hours
@@ -429,7 +420,7 @@ function showMatch(msg) {
   holdingKey = true;
   const keyLine = document.createElement("button");
   keyLine.type = "button";
-  keyLine.className = "line key";
+  keyLine.className = "vg-line vg-key";
   keyLine.textContent = "  Private Key: hidden. Click here to reveal it.";
   keyLine.title = "Reveal the private key";
   let shown = false;
@@ -440,7 +431,9 @@ function showMatch(msg) {
     }
     shown = true;
     keyLine.textContent = `  Private Key: ${msg.privateKey}`;
+    keyLine.classList.add("vg-key--shown");
     keyLine.title = "Copy the private key";
+    announce("Key shown.");
     scheduleKeyRedaction(keyLine);
     keyRevealed = true;
     startClearCountdownWhenReady();
@@ -452,50 +445,58 @@ function showMatch(msg) {
 /** The 60 second wipe runs once the run is over and a key has actually been shown. */
 function startClearCountdownWhenReady() {
   if (!runFinished || !keyRevealed || clearCountdownTimer) return;
-  print("  Click the key to copy it. Save it before the terminal clears.", "amber");
+  print("  Click the key to copy it. Save it before the terminal clears.", "warn");
   startClearCountdown();
 }
 
 function finishRun() {
   stopWorkers();
   runFinished = true;
+  setPhase("holding");
   print();
   print(
     targetCount > 1
       ? "  YOUR PRIVATE KEYS ARE ABOVE. Each stays hidden until you click its line."
       : "  YOUR PRIVATE KEY IS ABOVE. It stays hidden until you click that line.",
-    "amber"
+    "warn"
   );
-  print("  It exists only in this tab. Keep the tab open until you have saved it.", "amber");
-  print("  The terminal clears 60 seconds after you reveal it.", "amber");
-  print("  Anyone with the private key controls that wallet.", "amber");
+  print("  It exists only in this tab. Keep the tab open until you have saved it.", "warn");
+  print("  The terminal clears 60 seconds after you reveal it.", "warn");
+  print("  Anyone with the private key controls that wallet.", "warn");
   print();
   announce("Match found. The private key is hidden until you reveal it. Keep this tab open.");
   startClearCountdownWhenReady();
 }
 
-function startGrinding(pattern, position, caseSensitive, threadCount, batch, attempts) {
+function startGrinding(job) {
   totalAttempts = 0;
+  attemptsAtLastMatch = 0;
   startTime = Date.now();
   foundCount = 0;
-  targetCount = batch;
-  estimatedAttempts = attempts;
+  targetCount = job.batch;
+  perMatchAttempts = job.attempts;
   workerErrors = 0;
   grinding = true;
   runFinished = false;
   keyRevealed = false;
   workers = [];
-  setMatrixPaused(true);
+  setPhase("grinding");
   if (stopBtn) stopBtn.hidden = false;
+  resetReadouts();
 
   progressLine = document.createElement("div");
-  progressLine.className = "line progress";
-  progressLine.textContent = "  Checked: 0 | Rate: …/s | Time: 0s";
+  progressLine.className = "vg-line";
+  progressText = document.createElement("span");
+  progressText.textContent = "  Checked: 0 | Rate: …/s | Time: 0s";
+  const cursor = document.createElement("span");
+  cursor.className = "console__cursor";
+  cursor.setAttribute("aria-hidden", "true");
+  progressLine.append(progressText, cursor);
   output.appendChild(progressLine);
   scrollToBottom();
 
-  const expected = threadCount;
-  for (let i = 0; i < threadCount; i++) {
+  const expected = job.threads;
+  for (let i = 0; i < job.threads; i++) {
     const worker = new Worker(new URL("./grind-worker.js", import.meta.url), {
       name: "vanity-grind",
     });
@@ -505,7 +506,7 @@ function startGrinding(pattern, position, caseSensitive, threadCount, batch, att
       if (!msg) return;
 
       if (msg.type === "error") {
-        print(`  Worker error: ${msg.message}`, "red");
+        print(`  Worker error: ${msg.message}`, "danger");
         return;
       }
       if (msg.type === "ready") return;
@@ -520,6 +521,9 @@ function startGrinding(pattern, position, caseSensitive, threadCount, batch, att
         foundCount++;
         totalAttempts += msg.attempts;
         updateProgress();
+        attemptsAtLastMatch = totalAttempts;
+        // The probability readout starts again for the next match.
+        if (foundCount < targetCount) roChance.textContent = "0%";
         showMatch(msg);
         if (foundCount >= targetCount) finishRun();
       }
@@ -527,15 +531,15 @@ function startGrinding(pattern, position, caseSensitive, threadCount, batch, att
 
     worker.onerror = (err) => {
       workerErrors++;
-      print(`  Worker error: ${err.message || "failed to start"}`, "red");
+      print(`  Worker error: ${err.message || "failed to start"}`, "danger");
       if (grinding && workerErrors >= expected && foundCount === 0) {
         stopWorkers();
-        print("  Grinding stopped because the workers did not start.", "red");
-        promptRestart();
+        print("  Grinding stopped because the workers did not start.", "danger");
+        backToSetup("stopped", { another: true });
       }
     };
 
-    worker.postMessage({ pattern, position, caseSensitive });
+    worker.postMessage({ pattern: job.pattern, position: job.position, caseSensitive: job.caseSensitive });
     workers.push(worker);
   }
 }
@@ -546,19 +550,17 @@ function requestStop() {
   const hadMatches = foundCount > 0;
   stopWorkers();
   print();
-  print("  Stopped.", "red");
-  print(
-    `  Checked ${formatAttempts(totalAttempts)} keys in ${formatDuration(elapsed)}.`,
-    "dim"
-  );
+  print("  Stopped.", "danger");
+  print(`  Checked ${formatAttempts(totalAttempts)} keys in ${formatDuration(elapsed)}.`, "dim");
   print();
   if (hadMatches) {
     runFinished = true;
-    print("  The keys found so far are above. Reveal the ones you want to keep.", "amber");
-    print("  The terminal clears 60 seconds after the first reveal.", "amber");
+    setPhase("holding");
+    print("  The keys found so far are above. Reveal the ones you want to keep.", "warn");
+    print("  The terminal clears 60 seconds after the first reveal.", "warn");
     startClearCountdownWhenReady();
   } else {
-    promptRestart();
+    backToSetup("stopped", { another: true });
   }
 }
 
@@ -580,51 +582,150 @@ document.addEventListener("keydown", (e) => {
 
 if (stopBtn) stopBtn.addEventListener("click", requestStop);
 
-// ── Setup flow ───────────────────────────────────────
+// ── Setup ────────────────────────────────────────────
 
-async function promptRestart() {
+const cpuCount = navigator.hardwareConcurrency || 4;
+const maxThreads = cpuCount * 2;
+
+function setError(field, text) {
+  const input = $(field);
+  const box = $(`${field}-error`);
+  $(`${field}-error-text`).textContent = text || "";
+  box.hidden = !text;
+  if (text) input.setAttribute("aria-invalid", "true");
+  else input.removeAttribute("aria-invalid");
+}
+
+/** The pattern's own problem, in the words the console used, or "" when it is fine. */
+function patternProblem(pattern, { requireText }) {
+  if (!pattern) return requireText ? "Pattern cannot be empty." : "";
+  if (pattern.length > ADDRESS_LENGTH) return "Solana addresses are at most 44 characters.";
+  const bad = validatePattern(pattern);
+  if (bad.length > 0) {
+    return `Invalid character(s): ${bad.map((c) => `'${c}'`).join(", ")}. Base58 omits 0, O, I, and l.`;
+  }
+  return "";
+}
+
+function readThreads() {
+  const raw = threadsEl.value.trim();
+  if (raw === "") return { value: Math.max(1, cpuCount - 1) };
+  const n = parseInt(raw, 10);
+  if (!Number.isNaN(n) && n >= 1 && n <= maxThreads && String(n) === raw) return { value: n };
+  return { error: `Enter a number from 1 to ${maxThreads}.` };
+}
+
+function readBatch() {
+  if (!siteConfig.pro.enabled) return { value: 1 };
+  const raw = batchEl.value.trim();
+  if (raw === "") return { value: 1 };
+  const parsed = resolveBatch(parseInt(raw, 10), siteConfig.pro);
+  if (!parsed.rejected) return { value: parsed.batch };
+  return { error: `Enter a number from 1 to ${siteConfig.pro.maxBatch}.` };
+}
+
+/** The odds and the warnings beside the form, as the pattern is typed. */
+function renderOdds() {
+  const pattern = patternEl.value.trim();
+  const problem = patternProblem(pattern, { requireText: false });
+  setError("pattern", problem);
+  showPreview();
+  const odds = $("odds");
+  const list = $("setup-warnings");
+  list.replaceChildren();
+  if (!pattern || problem) {
+    odds.textContent = pattern ? "Fix the pattern first" : "Type a pattern";
+    return;
+  }
+  const threads = readThreads().value || Math.max(1, cpuCount - 1);
+  const job = describeJob({
+    pattern,
+    position: selectedPosition(),
+    caseSensitive: caseEl.checked,
+    threads,
+    keysPerThread: DEFAULT_KEYS_PER_THREAD,
+  });
+  odds.textContent = formatOdds(job.attempts);
+  // Rarity and case are facts about the pattern. Time warnings wait for this device's measured rate.
+  for (const warning of job.warnings) {
+    if (/assumed rate/.test(warning)) continue;
+    const li = document.createElement("li");
+    li.textContent = warning;
+    list.appendChild(li);
+  }
+}
+
+function initSetup() {
+  $("cores").textContent = String(navigator.hardwareConcurrency || "?");
+  threadsEl.max = String(maxThreads);
+  threadsEl.value = String(Math.max(1, cpuCount - 1));
+  if (siteConfig.pro.enabled) {
+    $("batch-field").hidden = false;
+    batchEl.max = String(siteConfig.pro.maxBatch);
+    $("batch-max").textContent = String(siteConfig.pro.maxBatch);
+  }
+  patternEl.addEventListener("input", renderOdds);
+  caseEl.addEventListener("change", renderOdds);
+  for (const radio of form.querySelectorAll('input[name="position"]')) radio.addEventListener("change", renderOdds);
+  threadsEl.addEventListener("blur", () => setError("threads", readThreads().error || ""));
+  batchEl.addEventListener("blur", () => setError("batch", readBatch().error || ""));
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const pattern = patternEl.value.trim();
+    const patternError = patternProblem(pattern, { requireText: true });
+    const threads = readThreads();
+    const batch = readBatch();
+    setError("pattern", patternError);
+    setError("threads", threads.error || "");
+    setError("batch", batch.error || "");
+    const firstBad = patternError ? patternEl : threads.error ? threadsEl : batch.error ? batchEl : null;
+    if (firstBad) {
+      firstBad.focus();
+      return;
+    }
+    runJob({
+      pattern,
+      position: selectedPosition(),
+      caseSensitive: caseEl.checked,
+      threads: threads.value,
+      batch: batch.value,
+    });
+  });
+  renderOdds();
+}
+
+/** Back to the form. After a run (`another`), the console says how to start the next one. */
+function backToSetup(pill = "setup", { another = false } = {}) {
   if (clearCountdownTimer) {
     clearInterval(clearCountdownTimer);
     clearCountdownTimer = null;
   }
-  const answer = await waitForInput("  Grind another? [Y/n] > ");
-  hideInput();
-  if (answer.trim().toLowerCase() === "n") {
-    print();
-    print("  Session ended. Refresh the page to start over.", "dim");
-    return;
-  }
-  print();
-  await runSetup();
+  setPhase("setup", pill);
+  showPreview();
+  if (another) print("  Grind another? Set a pattern and press Start grinding.", "dim");
+  const active = document.activeElement;
+  if (!active || active === document.body || $("generator").contains(active)) focusQuietly(patternEl);
 }
 
-function previewAddress(pattern, position, width = 44) {
-  const gap = Math.max(0, width - pattern.length);
-  const pad = "·".repeat(gap);
-  if (position === "prefix") return pattern + pad;
-  if (position === "suffix") return pad + pattern;
-  if (position === "prefix-or-suffix") {
-    return `${pattern}${pad}   or   ${pad}${pattern}`;
-  }
-  const left = Math.floor(gap / 2);
-  return "·".repeat(left) + pattern + "·".repeat(gap - left);
-}
-
-function printPreview(pattern, position) {
-  const full = `  Preview:    ${previewAddress(pattern, position)}`;
+function previewLines(pattern, position) {
+  const full = (parts) => parts.join("");
   if (!isNarrow()) {
-    print(full, "bright");
-    return;
+    if (position === "prefix-or-suffix") {
+      return [`  Preview:    ${full(previewParts(pattern, "prefix"))}   or   ${full(previewParts(pattern, "suffix"))}`];
+    }
+    return [`  Preview:    ${full(previewParts(pattern, position))}`];
   }
   const usable = Math.max(pattern.length, Math.min(44, terminalColumns() - 2));
-  print("  Preview:", "bright");
   if (position === "prefix-or-suffix") {
-    print(`  ${previewAddress(pattern, "prefix", usable)}`, "bright");
-    print("  or", "dim");
-    print(`  ${previewAddress(pattern, "suffix", usable)}`, "bright");
-    return;
+    return [
+      "  Preview:",
+      `  ${full(previewParts(pattern, "prefix", usable))}`,
+      "  or",
+      `  ${full(previewParts(pattern, "suffix", usable))}`,
+    ];
   }
-  print(`  ${previewAddress(pattern, position, usable)}`, "bright");
+  return ["  Preview:", `  ${full(previewParts(pattern, position, usable))}`];
 }
 
 function benchmarkDevice() {
@@ -655,143 +756,67 @@ function benchmarkDevice() {
   });
 }
 
-async function runSetup() {
-  let pattern;
-  while (true) {
-    pattern = (await waitForInput("  Enter desired pattern > ")).trim();
-    hideInput();
-    if (!pattern) {
-      print("  Pattern cannot be empty.", "red");
-      continue;
-    }
-    if (pattern.length > ADDRESS_LENGTH) {
-      print("  Solana addresses are at most 44 characters.", "red");
-      continue;
-    }
-    const bad = validatePattern(pattern);
-    if (bad.length > 0) {
-      print(`  Invalid character(s): ${bad.map((c) => `'${c}'`).join(", ")}`, "red");
-      print("  Base58 omits 0, O, I, and l.", "red");
-      print();
-      continue;
-    }
-    break;
-  }
+async function runJob(settings) {
+  const { pattern, position, caseSensitive, threads, batch } = settings;
+  const job = {
+    ...settings,
+    ...describeJob({ pattern, position, caseSensitive, threads, keysPerThread: DEFAULT_KEYS_PER_THREAD }),
+  };
+  currentJob = job;
+  renderSummary(job);
+  setPhase("measuring");
+  focusQuietly(jobEl);
 
-  print();
-  print("  Where should the pattern appear?");
-  print("  [1] Prefix  (start of address)");
-  print("  [2] Suffix  (end of address)");
-  print("  [3] Prefix or suffix");
-  print("  [4] Anywhere in the address");
-  print();
-
-  let position;
-  while (true) {
-    const choice = (await waitForInput("  Choice [1/2/3/4] > ")).trim();
-    hideInput();
-    if (choice === "1") { position = "prefix"; break; }
-    if (choice === "2") { position = "suffix"; break; }
-    if (choice === "3") { position = "prefix-or-suffix"; break; }
-    if (choice === "4") { position = "anywhere"; break; }
-    print("  Enter 1, 2, 3, or 4.", "red");
-  }
-
-  print();
-  let caseSensitive;
-  while (true) {
-    const choice = (await waitForInput("  Case sensitive? [y/N] > ")).trim().toLowerCase();
-    hideInput();
-    if (choice === "" || choice === "n") { caseSensitive = false; break; }
-    if (choice === "y") { caseSensitive = true; break; }
-    print("  Enter y or n.", "red");
-  }
-
-  const cpuCount = navigator.hardwareConcurrency || 4;
-  const defaultThreads = Math.max(1, cpuCount - 1);
-  print();
-  let threadCount;
-  while (true) {
-    const raw = (await waitForInput(`  Worker threads [${defaultThreads}] > `)).trim();
-    hideInput();
-    if (raw === "") { threadCount = defaultThreads; break; }
-    const n = parseInt(raw, 10);
-    if (!Number.isNaN(n) && n >= 1 && n <= cpuCount * 2) { threadCount = n; break; }
-    print(`  Enter a number from 1 to ${cpuCount * 2}.`, "red");
-  }
-
-  let batch = 1;
-  if (siteConfig.pro.enabled) {
+  if (siteConfig.pro.enabled && batch > 1) {
     print();
     print(`  Pro is on. You can grind up to ${siteConfig.pro.maxBatch} matches in this run.`, "dim");
-    while (true) {
-      const raw = (await waitForInput(`  How many matches? [1] > `)).trim();
-      hideInput();
-      if (raw === "") { batch = 1; break; }
-      const parsed = resolveBatch(parseInt(raw, 10), siteConfig.pro);
-      if (!parsed.rejected) { batch = parsed.batch; break; }
-      print(`  Enter a number from 1 to ${siteConfig.pro.maxBatch}.`, "red");
-    }
-  } else if (isLongPattern(pattern, siteConfig.pro)) {
+  } else if (!siteConfig.pro.enabled && isLongPattern(pattern, siteConfig.pro)) {
     print();
-    print("  Pro notice: this pattern is past the free-length hint.", "amber");
-    print("  Batch mode is off on this deploy. One address still grinds in this tab.", "amber");
-    print("  Nothing you type is uploaded.", "amber");
+    print("  Pro notice: this pattern is past the free-length hint.", "warn");
+    print("  Batch mode is off on this deploy. One address still grinds in this tab.", "warn");
+    print("  Nothing you type is uploaded.", "warn");
   }
-
-  const job = describeJob({
-    pattern,
-    position,
-    caseSensitive,
-    threads: threadCount,
-    keysPerThread: DEFAULT_KEYS_PER_THREAD,
-  });
 
   print();
   printRule();
+  const caseWord = caseSensitive ? "sensitive" : "insensitive";
   if (isNarrow()) {
-    print(`  Pattern: "${pattern}"`, "bright");
+    print(`  Pattern: "${pattern}"`);
     print(`  Position: ${position}`);
-    print(`  Case: ${caseSensitive ? "sensitive" : "insensitive"}`);
-    print(`  Threads: ${threadCount}`);
+    print(`  Case: ${caseWord}`);
+    print(`  Threads: ${threads}`);
     print(`  Matches: ${batch}`);
     print(`  Est. keys: ~${formatAttempts(job.attempts)}`, "dim");
     print(`  Planning guess: ${formatEstimate(job.seconds)}`, "dim");
     print(`  At ~${formatAttempts(job.rate)} keys/s`, "dim");
   } else {
-    print(`  Pattern:    "${pattern}"`, "bright");
+    print(`  Pattern:    "${pattern}"`);
     print(`  Position:   ${position}`);
-    print(`  Case:       ${caseSensitive ? "sensitive" : "insensitive"}`);
-    print(`  Threads:    ${threadCount}`);
+    print(`  Case:       ${caseWord}`);
+    print(`  Threads:    ${threads}`);
     print(`  Matches:    ${batch}`);
     print(`  Est. keys:  ~${formatAttempts(job.attempts)} attempts`, "dim");
-    print(
-      `  Planning guess: ${formatEstimate(job.seconds)} at ~${formatAttempts(job.rate)} keys/s`,
-      "dim"
-    );
+    print(`  Planning guess: ${formatEstimate(job.seconds)} at ~${formatAttempts(job.rate)} keys/s`, "dim");
   }
   print("  Measuring this device…", "dim");
   const perWorker = await benchmarkDevice();
   if (perWorker) {
-    const deviceRate = perWorker * threadCount;
-    const deviceSeconds = Number.isFinite(job.attempts)
-      ? (job.attempts * batch) / deviceRate
-      : Infinity;
+    const deviceRate = perWorker * threads;
+    const deviceSeconds = Number.isFinite(job.attempts) ? (job.attempts * batch) / deviceRate : Infinity;
     if (isNarrow()) {
-      print(`  This device: ${formatAttempts(perWorker)} keys/s per worker`, "bright");
-      print(`  Across ${threadCount}: ~${formatAttempts(deviceRate)}/s`, "bright");
-      print(`  Est. time here: ${formatEstimate(deviceSeconds)}`, "bright");
+      print(`  This device: ${formatAttempts(perWorker)} keys/s per worker`);
+      print(`  Across ${threads}: ~${formatAttempts(deviceRate)}/s`);
+      print(`  Est. time here: ${formatEstimate(deviceSeconds)}`);
     } else {
       print(
-        `  This device: ${formatAttempts(perWorker)} keys/s per worker, ~${formatAttempts(deviceRate)}/s across ${threadCount}`,
-        "bright"
+        `  This device: ${formatAttempts(perWorker)} keys/s per worker, ~${formatAttempts(deviceRate)}/s across ${threads}`
       );
-      print(`  Est. time here: ${formatEstimate(deviceSeconds)}`, "bright");
+      print(`  Est. time here: ${formatEstimate(deviceSeconds)}`);
     }
   } else {
-    print("  Could not measure this device. The planning guess still stands.", "amber");
+    print("  Could not measure this device. The planning guess still stands.", "warn");
   }
-  printPreview(pattern, position);
+  for (const line of previewLines(pattern, position)) print(line, line.trim() === "or" ? "dim" : "");
   print(
     caseSensitive
       ? "  The preview uses the case you typed."
@@ -801,43 +826,41 @@ async function runSetup() {
   if (batch > 1) {
     print("  Batch time scales roughly with the number of matches.", "dim");
   }
-  for (const warning of job.warnings) print(`  ${warning}`, "amber");
+  for (const warning of job.warnings) print(`  ${warning}`, "warn");
   printRule();
   print();
-  print("  Pay $1 to start grinding.", "amber");
-  print("  Waiting for payment…", "amber");
+  print("  Pay $1 to start grinding.", "warn");
+  print("  Waiting for payment…", "warn");
 
+  setPhase("pay");
+  focusQuietly($("pay-wallet"));
   const paid = await ensurePaid();
   if (!paid.ok) {
-    print(`  ${paid.message || "Payment was not completed."}`, "amber");
+    print(`  ${paid.message || "Payment was not completed."}`, "warn");
     print();
-    await runSetup();
+    backToSetup();
     return;
   }
 
   const spent = await consumePaidGrind();
   if (!spent.ok) {
-    print(`  ${spent.message}`, "red");
+    print(`  ${spent.message}`, "danger");
     print();
-    await runSetup();
+    backToSetup();
     return;
   }
 
   print();
-  print(`  Grinding with ${threadCount} worker${threadCount === 1 ? "" : "s"}…`, "bright");
+  print(`  Grinding with ${threads} worker${threads === 1 ? "" : "s"}…`);
   print("  Press Stop, Esc, or Ctrl+C to stop.", "dim");
   print();
-  announce(`Grinding ${pattern}. ${threadCount} workers.`);
-  startGrinding(pattern, position, caseSensitive, threadCount, batch, job.attempts * batch);
+  announce(`Grinding ${pattern}. ${threads} workers.`);
+  startGrinding(job);
 }
 
-async function boot() {
-  hideInput();
+function boot() {
   const width = boxWidth();
-  print(boxTop(width), "box");
-  print(boxMid("VANITYGRINDER", width), "box");
-  print(boxMid(bannerSubtitle(width), width), "box");
-  print(boxBot(width), "box");
+  printBox([boxTop(width), boxMid("VANITYGRINDER", width), boxMid(bannerSubtitle(width), width), boxBot(width)]);
   print();
 
   const cores = navigator.hardwareConcurrency || "?";
@@ -855,73 +878,61 @@ async function boot() {
   }
   print();
   if (isNarrow()) {
-    print("  Base58: 1-9 A-H J-N P-Z a-k m-z", "bright");
-    print("  Excluded: 0 O I l", "amber");
+    print("  Base58: 1-9 A-H J-N P-Z a-k m-z");
+    print("  Excluded: 0 O I l", "warn");
   } else {
-    print("  Base58:   1-9  A-H  J-N  P-Z  a-k  m-z", "bright");
-    print("  Excluded: 0 (zero)  O (cap-o)  I (cap-i)  l (low-L)", "amber");
+    print("  Base58:   1-9  A-H  J-N  P-Z  a-k  m-z");
+    print("  Excluded: 0 (zero)  O (cap-o)  I (cap-i)  l (low-L)", "warn");
   }
   print();
-  await runSetup();
+  print("  Set a pattern, then press Start grinding.", "dim");
+  setPhase("setup");
 }
 
-function initNav() {
-  const nav = document.querySelector(".topnav nav");
-  const toggle = document.querySelector(".nav-toggle");
-  if (!nav || !toggle) return;
-  const close = () => {
-    nav.classList.remove("is-open");
-    toggle.setAttribute("aria-expanded", "false");
-  };
-  toggle.addEventListener("click", () => {
-    const open = !nav.classList.contains("is-open");
-    nav.classList.toggle("is-open", open);
-    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+// Links to the pattern field put the cursor in it. While a run holds the form, they go to the run.
+document.querySelectorAll('a[href="#pattern"]').forEach((link) => {
+  link.addEventListener("click", (event) => {
+    if (form.hidden) {
+      event.preventDefault();
+      $("generator").scrollIntoView({ block: "start" });
+      focusQuietly(jobEl);
+      return;
+    }
+    setTimeout(() => focusQuietly(patternEl), 0);
   });
-  nav.querySelectorAll("a").forEach((link) => link.addEventListener("click", close));
-  document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") close();
-  });
-  document.addEventListener("click", (event) => {
-    if (!event.target.closest(".topnav")) close();
-  });
-}
+});
 
 // ── Estimator ────────────────────────────────────────
 
-function addLine(parent, label, value, cls) {
-  const row = document.createElement("p");
-  row.className = "est-row" + (cls ? " " + cls : "");
-  const k = document.createElement("span");
-  k.className = "est-k";
+function kvRow(label, value) {
+  const row = document.createElement("div");
+  const k = document.createElement("dt");
   k.textContent = label;
-  const v = document.createElement("span");
-  v.className = "est-v";
+  const v = document.createElement("dd");
   v.textContent = value;
   row.append(k, v);
-  parent.appendChild(row);
+  return row;
 }
 
 function initEstimator() {
-  const form = document.getElementById("est-form");
-  if (!form) return;
-  form.addEventListener("submit", (event) => event.preventDefault());
+  const estForm = $("est-form");
+  if (!estForm) return;
+  estForm.addEventListener("submit", (event) => event.preventDefault());
 
-  const patternEl = document.getElementById("est-pattern");
-  const lengthEl = document.getElementById("est-length");
-  const lengthVal = document.getElementById("est-length-val");
-  const positionEl = document.getElementById("est-position");
-  const caseEl = document.getElementById("est-case");
-  const threadsEl = document.getElementById("est-threads");
-  const rateEl = document.getElementById("est-rate");
-  const result = document.getElementById("est-result");
+  const estPattern = $("est-pattern");
+  const lengthEl = $("est-length");
+  const lengthVal = $("est-length-val");
+  const positionEl = $("est-position");
+  const estCase = $("est-case");
+  const estThreads = $("est-threads");
+  const rateEl = $("est-rate");
+  const result = $("est-result");
 
-  const cores = navigator.hardwareConcurrency || 4;
-  threadsEl.value = String(Math.max(1, cores - 1));
+  estThreads.value = String(Math.max(1, cpuCount - 1));
   rateEl.value = String(DEFAULT_KEYS_PER_THREAD);
 
   function render() {
-    const typed = patternEl.value.trim();
+    const typed = estPattern.value.trim();
     if (typed) {
       lengthEl.max = String(Math.max(8, Math.min(ADDRESS_LENGTH, typed.length)));
       lengthEl.value = String(Math.min(ADDRESS_LENGTH, typed.length));
@@ -933,93 +944,80 @@ function initEstimator() {
     lengthVal.textContent = lengthEl.value;
 
     const pattern = typed || "A".repeat(Number(lengthEl.value) || 1);
-    const threads = Math.min(64, Math.max(1, parseInt(threadsEl.value, 10) || 1));
-    const rate = Math.min(
-      100_000,
-      Math.max(100, parseInt(rateEl.value, 10) || DEFAULT_KEYS_PER_THREAD)
-    );
+    const threads = Math.min(64, Math.max(1, parseInt(estThreads.value, 10) || 1));
+    const rate = Math.min(100_000, Math.max(100, parseInt(rateEl.value, 10) || DEFAULT_KEYS_PER_THREAD));
     const job = describeJob({
       pattern,
       position: positionEl.value,
-      caseSensitive: caseEl.checked,
+      caseSensitive: estCase.checked,
       threads,
       keysPerThread: rate,
     });
 
-    result.replaceChildren();
+    const label = document.createElement("p");
+    label.className = "vg-est__label";
+    label.textContent = "Expected attempts";
+    const figure = document.createElement("p");
+    figure.className = "vg-est__figure";
+    figure.textContent = `~${formatAttempts(job.attempts)}`;
+    const facts = document.createElement("dl");
+    facts.className = "kv";
+    facts.append(kvRow("Rough time", formatEstimate(job.seconds)), kvRow("Assumed speed", `${formatAttempts(job.rate)} keys/s`));
+    const parts = [label, figure, facts];
     if (!typed) {
       const note = document.createElement("p");
-      note.className = "est-note";
+      note.className = "hint";
       note.textContent =
         "No pattern typed. This estimates a letter pattern of the chosen length. Type one to include digits and prefix bias.";
-      result.appendChild(note);
+      parts.push(note);
     }
-    addLine(result, "Expected attempts", `~${formatAttempts(job.attempts)}`);
-    addLine(
-      result,
-      "Rough time",
-      formatEstimate(job.seconds),
-      Number.isFinite(job.seconds) && job.seconds > 86400 ? "warn" : ""
-    );
-    addLine(result, "Assumed speed", `${formatAttempts(job.rate)} keys/s`);
-    for (const warning of job.warnings) {
-      const line = document.createElement("p");
-      line.className = "est-warn";
-      line.textContent = warning;
-      result.appendChild(line);
+    if (job.warnings.length) {
+      const list = document.createElement("ul");
+      list.className = "vg-warnings";
+      for (const warning of job.warnings) {
+        const li = document.createElement("li");
+        li.textContent = warning;
+        list.appendChild(li);
+      }
+      parts.push(list);
     }
+    result.replaceChildren(...parts);
   }
 
-  for (const el of [patternEl, lengthEl, positionEl, caseEl, threadsEl, rateEl]) {
+  for (const el of [estPattern, lengthEl, positionEl, estCase, estThreads, rateEl]) {
     el.addEventListener("input", render);
     el.addEventListener("change", render);
   }
   render();
 }
 
-// ── Tip + Pro scaffold ───────────────────────────────
+// ── Tip + Pro ────────────────────────────────────────
 
 function initSupport() {
-  const tipAddress = document.getElementById("tip-address");
-  const tipCopy = document.getElementById("tip-copy");
-  const tipNote = document.getElementById("tip-note");
+  const tipAddress = $("tip-address");
+  const tipCopy = $("tip-copy");
+  const tipNote = $("tip-note");
   if (tipAddress && isPublishableTipAddress(siteConfig.tipAddress)) {
     tipAddress.textContent = siteConfig.tipAddress.trim();
-    tipAddress.tabIndex = 0;
-    if (tipCopy) {
-      tipCopy.hidden = false;
-      tipCopy.addEventListener("click", () => copyPublic(tipAddress.textContent.trim()));
-    }
+    if (tipCopy) tipCopy.hidden = false;
     if (tipNote) {
       tipNote.textContent =
         "Public address only. A tip is optional. The grind is $1 in USDC per grind, paid from your wallet, and is checked separately.";
     }
   }
 
-  const status = document.getElementById("pro-status");
-  const lead = document.getElementById("pro-lead");
+  const status = $("pro-status");
+  const lead = $("pro-lead");
   if (!status || !lead) return;
   if (siteConfig.pro.enabled) {
     status.textContent = "On";
-    status.classList.add("on");
-    lead.textContent =
-      `Pro is on for this build: up to ${siteConfig.pro.maxBatch} matches per run, still generated in this tab. There is no checkout.`;
+    lead.textContent = `Pro is on for this build: up to ${siteConfig.pro.maxBatch} matches per run, still generated in this tab. There is no checkout.`;
   } else {
     status.textContent = "Off";
-    status.classList.remove("on");
   }
 }
 
-document.querySelectorAll('a[href="#terminal-section"]').forEach((link) => {
-  link.addEventListener("click", () => {
-    setTimeout(() => {
-      if (!inputLine.classList.contains("hidden")) inputEl.focus();
-    }, 400);
-  });
-});
-
-initMatrix();
-initNav();
+initSetup();
 initEstimator();
 initSupport();
 initPay();

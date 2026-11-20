@@ -11,6 +11,7 @@ The code wins over this page. If they disagree, fix the page.
 - [The money path](#the-money-path): prepare, pay, verify, consume.
 - [Key generation](#key-generation): how a key is made and why it never leaves the tab.
 - [Response headers](#response-headers): the content security policy and where it comes from.
+- [Page and design system](#page-and-design-system): the generator's layout, the vendored Quiet Technical files, and the UI rules.
 - [Running the gate](#running-the-gate): the checks that must pass before a commit.
 - [Findings register](findings.md): what the 2026-11-16 audit found and what became of each finding.
 - [DEPLOY.md](../DEPLOY.md): environment variables, Netlify settings, and checks for a live deploy.
@@ -19,7 +20,7 @@ The code wins over this page. If they disagree, fix the page.
 
 | Part | Where | What it does |
 |---|---|---|
-| Page | `web/index.html`, `web/src/main.js`, `web/src/unload.js`, `web/src/style.css` | A terminal-style UI. Asks for a pattern, waits for payment, runs the grind, shows the match. |
+| Page | `web/index.html`, `web/src/main.js`, `web/src/match-view.js`, `web/src/unload.js`, `web/src/style.css` | The generator on Quiet Technical 2.3 (see [Page and design system](#page-and-design-system)). A form takes the pattern, payment unlocks one run, readouts and a console show the run, the console holds the key. |
 | Grind worker | `web/src/grind-worker.js` | Dedicated Web Workers, one per core. Generates ed25519 keys and matches their Base58 addresses. Has no network code. |
 | Payment UI | `web/src/pay.js` | Wallet Standard discovery, the Connect wallet flow, status lines and notes. Tested with a stand-in document and wallet (`pay-page.test.js`). |
 | Payment state | `web/src/pay-flow.js` | The saved claim, prepare → the page's check → the wallet (`pay`), polling, give-up rules, spending the token (`unlock`). No DOM, so it is unit-tested. |
@@ -157,6 +158,18 @@ The key reaches the page only through `postMessage` from the worker. It is shown
 - Worker (`/assets/grind-worker-*.js`): `default-src 'none'; frame-ancestors 'none'`. A dedicated worker loaded by URL is governed by its own response's policy (checked in Chromium).
 
 `netlify.toml` and `web/netlify.toml` hold no headers. Netlify reads `web/netlify.toml` when the base directory is `web`; the two files are identical apart from `base`.
+
+## Page and design system
+
+Last verified: 2026-11-20 on branch `ui/2026-11-20`.
+
+The page is built on Quiet Technical 2.3.0, VanityGrinder's product settings (`data-product="vanity"`, `data-theme="dark"` only; accent orchid `#c19fd1`). `web/public/system.css`, `web/public/system.js` and `web/public/fonts/` (Geist and Geist Mono, with `OFL.txt`) are byte copies from the design repo; `web/test/ui.test.js` pins their SHA-256 and checks every font `system.css` names is present. Never edit them here: copy a new release over them and update the hashes. `web/src/style.css` holds only VanityGrinder's own `vg-*` classes (and `.pay-id`); `_design/tools/collide.mjs --product web/src/style.css` must report 0 shared class names, 0 redefined system properties, 0 bare element selectors.
+
+- **Hero.** One headline, one line, one secondary action (Estimate a pattern). The nav's Start grinding is the one primary; it moves focus to the pattern field.
+- **Generator.** The real tool on a whole plinth, in a window. Side panel: the setup form (pattern with Base58 hint and inline errors, position radios, Match case, worker threads, odds as you type, Start grinding); during a run it becomes a summary list, and the payment step appears under it. Main view: three readouts (attempts/s, attempts, found by now, probability), the preview or found address with the pattern underlined (`.match`, from `match-view.js`), and the console.
+- **Run figures.** No remaining-time estimate is shown during a run. The third readout is `1 - (1 - 1/E)^n` over attempts since the last match (`foundByNowProbability`, `formatProbability` in `shared/grind-math.js`), rounded down, bounded to `<0.1%` and `>99.9%`. Planning lines before a run and the estimator's "Rough time" are labelled as guesses.
+- **Console.** `role="log"`, `aria-live="off"`; `#live-status` is the only live region in the generator. The private key line stays a console line ("Private Key: hidden. Click here to reveal it."); a click reveals it and announces "Key shown." only, a second click copies with a toast that never contains the key. Copy failures are console lines, not toasts. Fixed height, so arriving lines never move the page; long lines wrap under their text.
+- **404.** `web/public/404.html` on the same system; no product stylesheet.
 
 ## Running the gate
 

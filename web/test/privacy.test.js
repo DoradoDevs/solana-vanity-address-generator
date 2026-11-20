@@ -153,7 +153,7 @@ test("the terminal is marked never to be machine-translated, so a key shown ther
   assert.ok(open, "terminal window not found");
   // Chrome and Edge honour translate="no"; Google's page translator also looks for the notranslate class.
   assert.match(open, /\stranslate="no"/);
-  assert.match(open, /\sclass="notranslate"/);
+  assert.match(open, /\sclass="(?:[^"]*\s)?notranslate(?:\s[^"]*)?"/);
   // The key is only ever written inside it.
   const start = html.indexOf(open);
   assert.ok(html.indexOf('id="output"') > start);

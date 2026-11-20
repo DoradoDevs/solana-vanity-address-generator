@@ -1,19 +1,32 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr" data-product="vanity" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Page not found — VanityGrinder</title>
   <meta name="robots" content="noindex" />
-  <meta name="theme-color" content="#050505" />
+  <meta name="theme-color" content="#100f11" />
   <meta name="color-scheme" content="dark" />
-  <link rel="stylesheet" href="/404.css" />
+  <link rel="preload" href="/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/system.css" />
+  <script src="/system.js" defer></script>
 </head>
 <body>
-  <main>
-    <h1>Page not found</h1>
-    <p>That URL is not part of VanityGrinder. The generator lives on the home page.</p>
-    <p><a href="/">Back to VanityGrinder</a></p>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="wrap nav__inner">
+      <a class="wordmark" href="/">VanityGrinder</a>
+      <div class="nav__actions">
+        <a class="btn btn--primary btn--sm nav__cta" href="/#pattern">Start grinding</a>
+      </div>
+    </div>
+  </header>
+  <main id="main" tabindex="-1" class="section">
+    <div class="wrap stack" data-stack="4">
+      <h1>Page not found</h1>
+      <p class="lede measure">That URL is not part of VanityGrinder. The generator lives on the home page.</p>
+      <p><a class="btn" href="/">Back to VanityGrinder</a></p>
+    </div>
   </main>
 </body>
 </html>

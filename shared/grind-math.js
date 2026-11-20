@@ -204,6 +204,39 @@ export function formatDuration(seconds, opts = {}) {
   return "longer than a lifetime";
 }
 
+/**
+ * The chance that a search has found at least one match after `attempts`
+ * keys, when one match is expected every `expected` keys:
+ * 1 − (1 − 1/expected)^attempts. A search for a pattern has no fixed length,
+ * so this is what the page shows instead of a time: a probability, never a
+ * promise. Each key is independent, so after a match the count starts again.
+ */
+export function foundByNowProbability(attempts, expected) {
+  if (!Number.isFinite(expected) || expected <= 0 || !(attempts > 0)) return 0;
+  if (expected <= 1) return 1;
+  return -Math.expm1(attempts * Math.log1p(-1 / expected));
+}
+
+/**
+ * A probability as a short figure: whole percents, one decimal under 10%, and
+ * bounds at the ends so a tiny chance never reads as 0% and a near-certain one
+ * never reads as 100%. Rounded down, so the figure never overstates the chance.
+ */
+export function formatProbability(p) {
+  if (!(p > 0)) return "0%";
+  if (p < 0.001) return "<0.1%";
+  if (p >= 0.999) return ">99.9%";
+  if (p < 0.1) return `${(Math.floor(p * 1000) / 10).toFixed(1)}%`;
+  return `${Math.floor(p * 100)}%`;
+}
+
+/** "About 1 in N" for the odds of one key matching. Whole numbers with separators until they get long. */
+export function formatOdds(expected) {
+  if (!Number.isFinite(expected)) return "not possible";
+  if (expected < 1e12) return `About 1 in ${Math.round(expected).toLocaleString("en-US")}`;
+  return `About 1 in ${formatAttempts(expected)}`;
+}
+
 function caseFoldHelps(pattern) {
   for (const ch of pattern) {
     if (uniformCharProbability(ch, false) > 1 / 58 + 1e-12) return true;

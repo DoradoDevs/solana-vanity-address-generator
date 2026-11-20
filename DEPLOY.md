@@ -108,8 +108,9 @@ The first header must be `default-src 'self'; script-src 'self'; style-src 'self
 Then pay once from a wallet other than the payee `crimeK…` (`PAY_TO`), on the deploy you are checking. The payee cannot pay itself: prepare refuses, because such a transfer would move nothing.
 
 - The status line goes from "Looking for your payment on chain" to "Payment found" to "Grind unlocked", without a reload.
-- DevTools shows requests only to `/api/`. After the terminal says it is grinding, no further requests appear.
+- DevTools shows requests only to `/api/` and this site's own static files (`/system.css`, `/system.js`, `/fonts/*.woff2`, the bundle). After the console says it is grinding, no further requests appear.
 - The match shows the address and "Private Key: hidden". Clicking that line reveals the key and starts the 60 second countdown.
+- The page is on Quiet Technical 2.3 (2026-11-20 redesign). The deploy now publishes `system.css`, `system.js`, `fonts/` (eleven `.woff2` files and `OFL.txt`) and a rebuilt `404.html` from `web/public/`; `404.css` is gone. No header or CSP changed: `font-src 'self'` was already in the policy. Check that `/fonts/geist-latin-wght-normal.woff2` answers 200 with `font/woff2`, and that a missing path shows the new 404 page with its styles.
 - Reloading the page and reaching the payment step asks for a new payment; the spent payment is not offered again.
 
 Deploying replaces the page and the functions together. Switching from `34623f1`: a tab opened before the deploy keeps the old page, whose function URLs (`/.netlify/functions/`) are gone, so nobody pays through it. Every payment made under the old version and never spent, not only one in flight at the moment of the deploy, cannot be redeemed afterwards; "Unspent payments from the old version" lists them from the chain once this version is live, and refunds them. If someone reports one, "Refund requests" handles it. Later deploys keep the `/api/` paths, so an old tab keeps talking to the new functions; if the payee changed, it refuses to pay until reloaded.

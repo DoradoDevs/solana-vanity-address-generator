@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" dir="ltr" data-product="vanity" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
@@ -7,7 +7,7 @@
   <meta name="description" content="Generate a custom Solana vanity address in your browser. Private keys stay on your device. $1 in USDC per grind, paid from your wallet." />
   <meta name="author" content="DoradoDevs" />
   <meta name="robots" content="index,follow" />
-  <meta name="theme-color" content="#050505" />
+  <meta name="theme-color" content="#100f11" />
   <meta name="color-scheme" content="dark" />
   <meta name="referrer" content="no-referrer" />
   <link rel="canonical" href="https://vanitygrinder.com/" />
@@ -55,300 +55,398 @@
   }
   </script>
 
+  <link rel="preload" href="/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/system.css" />
   <link rel="stylesheet" href="/src/style.css" />
+  <script src="/system.js" defer></script>
 </head>
 <body>
-  <a class="skip" href="#terminal-section">Skip to the generator</a>
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-copy" viewBox="0 0 16 16"><rect x="5.25" y="5.25" width="8" height="8.5" rx="1.5" /><path d="M10.75 5.25V3.75a1.5 1.5 0 0 0-1.5-1.5h-5a1.5 1.5 0 0 0-1.5 1.5v6a1.5 1.5 0 0 0 1.5 1.5h1" /></symbol>
+    <symbol id="i-check" viewBox="0 0 16 16"><path d="m3 8.5 3.25 3L13 4.75" /></symbol>
+    <symbol id="i-alert" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.25" /><path d="M8 4.75v3.75M8 11.1v.15" /></symbol>
+  </svg>
+  <a class="skip-link" href="#pattern">Skip to the generator</a>
   <div id="live-status" class="sr-only" aria-live="polite"></div>
 
-  <canvas id="matrix-bg" aria-hidden="true"></canvas>
-  <div class="blob blob-1" aria-hidden="true"></div>
-  <div class="blob blob-2" aria-hidden="true"></div>
-  <div class="blob blob-3" aria-hidden="true"></div>
-
-  <div id="page">
-    <header class="topnav">
-      <a class="brand" href="#hero">VanityGrinder</a>
-      <button type="button" class="nav-toggle" aria-expanded="false" aria-controls="site-nav">Menu</button>
-      <nav id="site-nav" aria-label="Page">
-        <a href="#terminal-section">Generator</a>
-        <a href="#explainer">How it works</a>
-        <a href="#estimator">Estimator</a>
-        <a href="#safety">Safety</a>
-        <a href="#support">Support</a>
+  <header class="nav nav--settle">
+    <div class="wrap nav__inner">
+      <a class="wordmark" href="#main">VanityGrinder</a>
+      <nav class="nav__links" aria-label="Page">
+        <a class="nav__link" href="#generator">Generator</a>
+        <a class="nav__link" href="#how">How it works</a>
+        <a class="nav__link" href="#estimator">Estimator</a>
+        <a class="nav__link" href="#safety">Safety</a>
+        <a class="nav__link" href="#support">Support</a>
       </nav>
-    </header>
-
-    <header id="hero">
-      <div class="hero-content">
-        <p class="eyebrow">Solana · ed25519 · local only</p>
-        <h1 class="logo">Vanity<span class="accent">Grinder</span></h1>
-        <p class="tagline">Custom Solana wallet addresses, generated on your CPU. Keys are generated on your device; the only network call is payment verification.</p>
-        <ul class="trust">
-          <li>Web Workers on your cores</li>
-          <li>$1 in USDC per grind, paid from your wallet</li>
-          <li>No analytics or cookies</li>
-        </ul>
-        <div class="cta-row">
-          <a class="cta" href="#terminal-section">Start grinding</a>
-          <a class="cta secondary" href="#estimator">Estimate a pattern</a>
-        </div>
-      </div>
-    </header>
-
-    <section id="pay-gate" class="pay-gate" aria-labelledby="pay-title">
-      <h2 id="pay-title">Pay $1 to start grinding</h2>
-      <p>Keys are generated on your device. The only network call is payment verification. One payment unlocks one grind.</p>
-      <p id="pay-quote" class="pay-quote">$1 in USDC per grind, paid from your wallet.</p>
-      <p>Connect Phantom, Solflare, Backpack, or another Solana wallet. The wallet signs a transfer of exactly 1.00 USDC. You need a little SOL for the network fee.</p>
-      <div class="pay-actions">
-        <button type="button" id="pay-wallet">Connect wallet</button>
-        <button type="button" id="pay-cancel">Not now</button>
-      </div>
-      <div id="pay-wallet-list" class="pay-wallets"></div>
-      <p id="pay-status" class="pay-status" role="status"></p>
-    </section>
-
-    <section id="terminal-section" aria-labelledby="generator-title">
-      <h2 id="generator-title" class="sr-only">Generator</h2>
-      <div id="terminal-window" translate="no" class="notranslate">
-        <div class="window-bar">
-          <div class="window-dots" aria-hidden="true">
-            <span class="dot red"></span>
-            <span class="dot yellow"></span>
-            <span class="dot green"></span>
+      <div class="nav__actions">
+        <a class="btn btn--primary btn--sm nav__cta" href="#pattern">Start grinding</a>
+        <details class="nav__menu">
+          <summary class="btn">Menu</summary>
+          <div class="nav__panel">
+            <nav aria-label="Page">
+              <ul>
+                <li><a class="nav__link" href="#generator">Generator</a></li>
+                <li><a class="nav__link" href="#how">How it works</a></li>
+                <li><a class="nav__link" href="#estimator">Estimator</a></li>
+                <li><a class="nav__link" href="#safety">Safety</a></li>
+                <li><a class="nav__link" href="#support">Support</a></li>
+              </ul>
+            </nav>
           </div>
-          <div class="window-title">vanity-grinder</div>
-          <div class="end-slot">
-            <button type="button" id="stop-btn" hidden>Stop</button>
+        </details>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="wrap stack" data-stack="12">
+        <div class="hero__lead">
+          <div class="stack hero__copy">
+            <h1 class="display" id="hero-title">Custom Solana addresses, generated on your CPU.</h1>
           </div>
-        </div>
-        <div id="crt">
-          <div id="scanlines" aria-hidden="true"></div>
-          <div id="terminal">
-            <div id="output" role="log"></div>
-            <div id="input-line">
-              <label id="prompt" for="input">&gt; </label>
-              <input type="text" id="input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" />
+          <div class="stack hero__copy">
+            <p class="lede">Keys are generated on your device; the only network call is payment verification.</p>
+            <div class="row hero__actions">
+              <a class="btn btn--lg" href="#estimator">Estimate a pattern</a>
             </div>
-            <div id="choice-bar" class="choice-bar" hidden></div>
+          </div>
+        </div>
+
+        <section id="generator" class="plinth plinth--whole" aria-labelledby="generator-title">
+          <div class="window vg-gen">
+            <div class="window__bar vg-gen__bar">
+              <span class="window__url vg-gen__url">vanity-grinder</span>
+              <span class="window__meta vg-gen__meta"><span class="pill" id="run-state">Ready</span></span>
+              <button type="button" class="btn btn--sm vg-stop" id="stop-btn" hidden>Stop</button>
+            </div>
+            <div class="window__body window__split window__split--start">
+              <div class="window__side window__body--pad stack vg-side" data-stack="6">
+                <h2 class="vg-side__title" id="generator-title">Generator</h2>
+
+                <form id="setup" class="stack" data-stack="5" novalidate>
+                  <div class="field vg-field">
+                    <label class="label" for="pattern">Pattern</label>
+                    <input class="input mono" id="pattern" type="text" maxlength="44" placeholder="pump" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="go" aria-describedby="pattern-hint pattern-error" />
+                    <p class="hint" id="pattern-hint">Base58 only: no <span class="mono">0</span>, <span class="mono">O</span>, <span class="mono">I</span> or <span class="mono">l</span>.</p>
+                    <p class="error" id="pattern-error" hidden><svg class="icon" aria-hidden="true"><use href="#i-alert" /></svg><span id="pattern-error-text"></span></p>
+                  </div>
+
+                  <fieldset class="choices">
+                    <legend class="label">Where it appears</legend>
+                    <label class="check"><input type="radio" name="position" value="suffix" checked /><span>Suffix, the end</span></label>
+                    <label class="check"><input type="radio" name="position" value="prefix" /><span>Prefix, the start</span></label>
+                    <label class="check"><input type="radio" name="position" value="prefix-or-suffix" /><span>Either end</span></label>
+                    <label class="check"><input type="radio" name="position" value="anywhere" /><span>Anywhere</span></label>
+                  </fieldset>
+
+                  <label class="check"><input type="checkbox" id="case" /><span>Match case</span></label>
+
+                  <div class="field vg-field">
+                    <label class="label" for="threads">Worker threads</label>
+                    <input class="input vg-num" id="threads" type="number" min="1" value="4" inputmode="numeric" aria-describedby="threads-hint threads-error" />
+                    <p class="hint" id="threads-hint">This browser reports <span id="cores">?</span> cores.</p>
+                    <p class="error" id="threads-error" hidden><svg class="icon" aria-hidden="true"><use href="#i-alert" /></svg><span id="threads-error-text"></span></p>
+                  </div>
+
+                  <div class="field vg-field" id="batch-field" hidden>
+                    <label class="label" for="batch">Matches</label>
+                    <input class="input vg-num" id="batch" type="number" min="1" value="1" inputmode="numeric" aria-describedby="batch-hint batch-error" />
+                    <p class="hint" id="batch-hint">Pro is on: up to <span id="batch-max">10</span> matches in one run.</p>
+                    <p class="error" id="batch-error" hidden><svg class="icon" aria-hidden="true"><use href="#i-alert" /></svg><span id="batch-error-text"></span></p>
+                  </div>
+
+                  <dl class="kv vg-facts vg-odds">
+                    <div><dt>Odds</dt><dd id="odds">Type a pattern</dd></div>
+                  </dl>
+                  <ul class="vg-warnings" id="setup-warnings"></ul>
+
+                  <div class="stack" data-stack="2">
+                    <button type="submit" class="btn btn--primary vg-start" id="start-btn">Start grinding</button>
+                    <p class="hint" id="pay-quote">$1 in USDC per grind, paid from your wallet.</p>
+                  </div>
+                </form>
+
+                <div id="job" class="stack" data-stack="4" tabindex="-1" hidden>
+                  <dl class="kv vg-facts" id="job-summary"></dl>
+                  <p class="hint" id="job-note"></p>
+                </div>
+
+                <section id="pay-gate" class="vg-pay stack" data-stack="3" data-step="idle" aria-labelledby="pay-title">
+                  <h3 id="pay-title" class="vg-pay__title">Pay $1 to start grinding</h3>
+                  <p class="vg-pay__text">Keys are generated on your device. The only network call is payment verification. One payment unlocks one grind.</p>
+                  <p class="vg-pay__text">Connect Phantom, Solflare, Backpack, or another Solana wallet. The wallet signs a transfer of exactly 1.00 USDC. You need a little SOL for the network fee.</p>
+                  <div class="row vg-pay__actions">
+                    <button type="button" class="btn btn--primary" id="pay-wallet">Connect wallet</button>
+                    <button type="button" class="btn" id="pay-cancel">Not now</button>
+                  </div>
+                  <div id="pay-wallet-list" class="vg-wallets"></div>
+                  <p id="pay-status" class="vg-pay__status" role="status"></p>
+                </section>
+              </div>
+
+              <div id="terminal-window" class="vg-run window__body--pad stack notranslate" data-stack="5" translate="no">
+                <dl class="readouts vg-readouts" id="readouts" data-state="idle">
+                  <div class="readout readout--current vg-readout"><dt class="readout__label">attempts/s</dt><dd class="readout__value vg-readout__value" id="ro-rate">0</dd></div>
+                  <div class="readout vg-readout"><dt class="readout__label">attempts</dt><dd class="readout__value vg-readout__value" id="ro-attempts">0</dd></div>
+                  <div class="readout vg-readout"><dt class="readout__label">found by now, probability</dt><dd class="readout__value vg-readout__value" id="ro-chance">0%</dd></div>
+                </dl>
+                <div class="vg-addr">
+                  <p class="vg-addr__label" id="addr-label">Preview</p>
+                  <div class="vg-addr__row">
+                    <p class="value vg-addr__value" id="addr" aria-labelledby="addr-label"></p>
+                    <button type="button" class="btn btn--ghost btn--sm" id="addr-copy" data-copy="#addr" hidden><svg class="icon icon--copy" aria-hidden="true"><use href="#i-copy" /></svg><svg class="icon icon--done" aria-hidden="true"><use href="#i-check" /></svg><span data-label>Copy address</span></button>
+                  </div>
+                </div>
+                <div class="console vg-console" id="output" role="log" aria-live="off" aria-label="Grinder output"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+        <noscript>
+          <p class="note">JavaScript runs the grinder and the wallet payment. The explainer, estimator labels, difficulty table, and safety FAQ below are in the page itself.</p>
+        </noscript>
+      </div>
+    </section>
+
+    <section class="section" id="privacy" aria-labelledby="privacy-title">
+      <div class="wrap stack" data-stack="8">
+        <div class="stack section__head">
+          <h2 id="privacy-title">What stays on your device</h2>
+          <p class="section__lede">Everything but the payment. The host delivered this static page; it has no account system and no API that could receive a key.</p>
+        </div>
+        <ul class="cells">
+          <li class="cell">
+            <h3>Keys made here</h3>
+            <p>Every keypair is generated in your browser, in Web Workers, one per core you allow, so the tab can use the machine you already have.</p>
+            <p class="cell__fact">Web Workers, @noble/curves ed25519</p>
+          </li>
+          <li class="cell">
+            <h3>Payment is the only call</h3>
+            <p>Content-Security-Policy lets this page connect only back to this site, for the $1 USDC payment. Fonts are served from this site; nothing is loaded from another host. No cookies or analytics. The grind worker is served with a policy that allows no connections at all, and it never receives the RPC URL.</p>
+            <p class="cell__fact">worker: default-src 'none'</p>
+          </li>
+          <li class="cell">
+            <h3>Wiped after use</h3>
+            <p>Seed bytes are cleared after each attempt. A matched key stays hidden until you reveal it. The terminal clears about 60 seconds after that, and a key line that is still showing redacts itself after two minutes. About 60 seconds after you copy the key, the page tries to clear the clipboard if that same key is still on it. A public tip address is not cleared.</p>
+            <p class="cell__fact">clears 60 s after reveal</p>
+          </li>
+          <li class="cell">
+            <h3>Small dependency</h3>
+            <p>Key derivation uses <span class="mono">@noble/curves</span> ed25519. The page is built from text nodes, not HTML strings, so a pattern cannot become markup.</p>
+            <p class="cell__fact">textContent only</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section" id="how" aria-labelledby="how-title">
+      <div class="wrap stack" data-stack="8">
+        <div class="stack section__head">
+          <h2 id="how-title">What a Solana vanity address is</h2>
+          <p class="section__lede">A normal keypair, kept only if the public address contains the text you asked for.</p>
+        </div>
+        <div class="split">
+          <div class="prose vg-prose">
+            <p>A Solana address is the Base58 spelling of an ed25519 public key. Vanity grinding creates ordinary keypairs with the browser's cryptographic random source and discards the ones that miss. The pattern is a filter on the address you can already see. It does not weaken the private key, and it does not require a server to "reserve" anything.</p>
+            <p>You choose where the text sits. A <strong>suffix</strong> (the end) is the usual choice. <strong>Anywhere</strong> is faster because the text can land in many slots. A <strong>prefix</strong> is harsher: most addresses are 44 characters and start with <span class="mono">2–9</span>, <span class="mono">A–H</span>, or <span class="mono">J</span>. A prefix like <span class="mono">pump</span> starts with a rare letter, so <span class="mono">…pump</span> finishes long before <span class="mono">pump…</span>.</p>
+            <p>Base58 leaves out <span class="mono">0</span>, <span class="mono">O</span>, <span class="mono">I</span>, and <span class="mono">l</span> so those glyphs cannot be confused. Each extra case-sensitive character multiplies the work by about 58. A letter you allow in either case multiplies it by about 29 instead. Digits have no second case, so "ignore case" does not speed them up.</p>
+          </div>
+          <div class="stack" data-stack="5">
+            <h3>How a run works</h3>
+            <ol class="steps steps--stacked">
+              <li>
+                <div>
+                  <h4>Choose the text</h4>
+                  <p>Type a short Base58 pattern. The generator shows the odds as you type, and the estimator below turns a length into an expected number of keys and a rough time.</p>
+                </div>
+              </li>
+              <li>
+                <div>
+                  <h4>Pick the slot</h4>
+                  <p>Prefix, suffix, either end, or anywhere. Case-sensitive is optional and slower for letters.</p>
+                </div>
+              </li>
+              <li>
+                <div>
+                  <h4>Grind locally</h4>
+                  <p>Workers derive public keys with <span class="mono">@noble/curves</span> until one address matches. The figures update from the rate your machine actually hits.</p>
+                </div>
+              </li>
+              <li>
+                <div>
+                  <h4>Save the key offline</h4>
+                  <p>The private key is the 64-byte Solana secret (seed plus public key), Base58-encoded, which wallets import. Copy it into a password manager or hardware wallet. Closing the tab discards it.</p>
+                </div>
+              </li>
+            </ol>
           </div>
         </div>
       </div>
-      <p class="local-note">Keys are generated on your device. The only network call is payment verification. Stop a grind with the button, Esc, or Ctrl+C.</p>
-      <noscript>
-        <p class="noscript">JavaScript runs the grinder and the wallet payment. The explainer, estimator labels, difficulty table, and safety FAQ below are in the page itself.</p>
-      </noscript>
     </section>
 
-    <section id="features" aria-label="Privacy properties">
-      <article class="glass-card">
-        <h3>100% client-side</h3>
-        <p>Every keypair is generated in your browser. The host only delivered this static page. It has no account system and no API that could receive a key.</p>
-      </article>
-      <article class="glass-card">
-        <h3>Multi-core workers</h3>
-        <p>The search runs in Web Workers, one per core you allow, so the tab can use the machine you already have. The rain animation pauses while they grind.</p>
-      </article>
-      <article class="glass-card">
-        <h3>Payment only</h3>
-        <p>Content-Security-Policy lets this page connect only back to this site, for the $1 USDC payment. No web fonts, cookies, or analytics are loaded. The grind worker is served with a policy that allows no connections at all, and it never receives the RPC URL.</p>
-      </article>
-      <article class="glass-card">
-        <h3>Memory wiping</h3>
-        <p>Seed bytes are cleared after each attempt. A matched key stays hidden until you reveal it. The terminal clears about 60 seconds after that, and a key line that is still showing redacts itself after two minutes.</p>
-      </article>
-      <article class="glass-card">
-        <h3>Clipboard hygiene</h3>
-        <p>Click the private key to copy it. About 60 seconds later the page tries to clear the clipboard if that same key is still on it. A public tip address is not cleared.</p>
-      </article>
-      <article class="glass-card">
-        <h3>Small dependency</h3>
-        <p>Key derivation uses <span class="mono">@noble/curves</span> ed25519. The page is built from text nodes, not HTML strings, so a pattern cannot become markup.</p>
-      </article>
-    </section>
-
-    <section id="explainer">
-      <h2>What a Solana vanity address is</h2>
-      <p class="section-sub">A normal keypair, kept only if the public address contains the text you asked for.</p>
-      <div class="prose">
-        <p>A Solana address is the Base58 spelling of an ed25519 public key. Vanity grinding creates ordinary keypairs with the browser's cryptographic random source and discards the ones that miss. The pattern is a filter on the address you can already see. It does not weaken the private key, and it does not require a server to "reserve" anything.</p>
-        <p>You choose where the text sits. A <strong>suffix</strong> (the end) is the usual choice. <strong>Anywhere</strong> is faster because the text can land in many slots. A <strong>prefix</strong> is harsher: most addresses are 44 characters and start with <span class="mono">2–9</span>, <span class="mono">A–H</span>, or <span class="mono">J</span>. A prefix like <span class="mono">pump</span> starts with a rare letter, so <span class="mono">…pump</span> finishes long before <span class="mono">pump…</span>.</p>
-        <p>Base58 leaves out <span class="mono">0</span>, <span class="mono">O</span>, <span class="mono">I</span>, and <span class="mono">l</span> so those glyphs cannot be confused. Each extra case-sensitive character multiplies the work by about 58. A letter you allow in either case multiplies it by about 29 instead. Digits have no second case, so "ignore case" does not speed them up.</p>
-      </div>
-    </section>
-
-    <section id="how-it-works">
-      <h2>How a run works</h2>
-      <div class="steps">
-        <div class="step">
-          <div class="step-num">1</div>
-          <div class="step-text">
-            <h3>Choose the text</h3>
-            <p>Type a short Base58 pattern. The estimator below turns that length into an expected number of keys and a rough time.</p>
+    <section class="section" id="estimator" aria-labelledby="estimator-title">
+      <div class="wrap stack" data-stack="8">
+        <div class="stack section__head">
+          <h2 id="estimator-title">Difficulty and time</h2>
+          <p class="section__lede">Expected attempts for a pattern of this length. The grinder replaces the guess with a measured rate once a run starts.</p>
+        </div>
+        <form id="est-form" class="vg-est" novalidate>
+          <div class="vg-est__fields">
+            <div class="field vg-field vg-est__wide">
+              <label class="label" for="est-pattern">Pattern <span class="label__optional">optional</span></label>
+              <input class="input mono" id="est-pattern" type="text" maxlength="44" placeholder="e.g. pump" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+            </div>
+            <div class="field vg-field vg-est__wide">
+              <label class="label" for="est-length">Length <span class="mono" id="est-length-val">4</span></label>
+              <input class="range" id="est-length" type="range" min="1" max="8" value="4" />
+            </div>
+            <div class="field vg-field">
+              <label class="label" for="est-position">Position</label>
+              <span class="select-wrap">
+                <select class="select" id="est-position">
+                  <option value="suffix" selected>Suffix (end)</option>
+                  <option value="prefix">Prefix (start)</option>
+                  <option value="prefix-or-suffix">Prefix or suffix</option>
+                  <option value="anywhere">Anywhere</option>
+                </select>
+              </span>
+            </div>
+            <div class="field vg-field vg-est__case">
+              <span class="label" id="est-case-label">Case</span>
+              <label class="check vg-est__check"><input id="est-case" type="checkbox" aria-describedby="est-case-label" /><span>Case sensitive</span></label>
+            </div>
+            <div class="field vg-field">
+              <label class="label" for="est-threads">Threads</label>
+              <input class="input vg-num" id="est-threads" type="number" min="1" max="64" value="4" inputmode="numeric" />
+            </div>
+            <div class="field vg-field">
+              <label class="label" for="est-rate">Keys / second / thread</label>
+              <input class="input vg-num" id="est-rate" type="number" min="100" max="100000" value="5000" inputmode="numeric" />
+            </div>
           </div>
-        </div>
-        <div class="step">
-          <div class="step-num">2</div>
-          <div class="step-text">
-            <h3>Pick the slot</h3>
-            <p>Prefix, suffix, either end, or anywhere. Case-sensitive is optional and slower for letters.</p>
+          <div class="vg-est__result" id="est-result" aria-live="polite"></div>
+        </form>
+
+        <div class="stack" data-stack="3">
+          <div class="data-table-wrap" role="region" aria-labelledby="ref-cap" tabindex="0">
+            <table class="data-table">
+              <caption id="ref-cap">Suffix matches at 100,000 keys/s</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Length</th>
+                  <th scope="col" class="end">Case-sensitive</th>
+                  <th scope="col" class="end">Letter, either case</th>
+                  <th scope="col" class="end">Time @ 100k/s</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row" class="num">1</th><td class="end num">58</td><td class="end num">29</td><td class="end">instant</td></tr>
+                <tr><th scope="row" class="num">2</th><td class="end num">3,364</td><td class="end num">841</td><td class="end">instant</td></tr>
+                <tr><th scope="row" class="num">3</th><td class="end num">195,112</td><td class="end num">24,389</td><td class="end">~2 seconds</td></tr>
+                <tr><th scope="row" class="num">4</th><td class="end num">11.3M</td><td class="end num">707k</td><td class="end">~2 minutes</td></tr>
+                <tr><th scope="row" class="num">5</th><td class="end num">656M</td><td class="end num">20.5M</td><td class="end">~1.8 hours</td></tr>
+                <tr><th scope="row" class="num">6</th><td class="end num">38.1B</td><td class="end num">595M</td><td class="end">~4.4 days</td></tr>
+                <tr><th scope="row" class="num">7</th><td class="end num">2.21T</td><td class="end num">17.2B</td><td class="end">~8.5 months</td></tr>
+              </tbody>
+            </table>
           </div>
-        </div>
-        <div class="step">
-          <div class="step-num">3</div>
-          <div class="step-text">
-            <h3>Grind locally</h3>
-            <p>Workers derive public keys with <span class="mono">@noble/curves</span> until one address matches. The ETA updates from the rate your machine actually hits.</p>
-          </div>
-        </div>
-        <div class="step">
-          <div class="step-num">4</div>
-          <div class="step-text">
-            <h3>Save the key offline</h3>
-            <p>The private key is the 64-byte Solana secret (seed plus public key), Base58-encoded, which wallets import. Copy it into a password manager or hardware wallet. Closing the tab discards it.</p>
-          </div>
+          <p class="hint vg-measure">"Letter, either case" is a pattern like <span class="mono">pump</span>, not a digit. The time column is the case-sensitive suffix. Prefixes that start outside 2–9, A–H, and J are much slower. Use the estimator for a specific pattern.</p>
         </div>
       </div>
     </section>
 
-    <section id="estimator">
-      <h2>Difficulty and time</h2>
-      <p class="section-sub">Expected attempts for a pattern of this length. The grinder replaces the guess with a measured rate once a run starts.</p>
-      <form id="est-form" class="glass-card estimator-card">
-        <div class="estimator-grid">
-          <label class="field">
-            <span>Pattern</span>
-            <input id="est-pattern" type="text" maxlength="44" placeholder="e.g. pump" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-          </label>
-          <label class="field">
-            <span>Length <strong id="est-length-val">4</strong></span>
-            <input id="est-length" type="range" min="1" max="8" value="4" />
-          </label>
-          <label class="field">
-            <span>Position</span>
-            <select id="est-position">
-              <option value="suffix" selected>Suffix (end)</option>
-              <option value="prefix">Prefix (start)</option>
-              <option value="prefix-or-suffix">Prefix or suffix</option>
-              <option value="anywhere">Anywhere</option>
-            </select>
-          </label>
-          <label class="field check">
-            <span>Case</span>
-            <span class="check-row"><input id="est-case" type="checkbox" /> Case sensitive</span>
-          </label>
-          <label class="field">
-            <span>Threads</span>
-            <input id="est-threads" type="number" min="1" max="64" value="4" inputmode="numeric" />
-          </label>
-          <label class="field">
-            <span>Keys / second / thread</span>
-            <input id="est-rate" type="number" min="100" max="100000" value="5000" inputmode="numeric" />
-          </label>
+    <section class="section" id="safety" aria-labelledby="safety-title">
+      <div class="wrap split">
+        <div class="stack section__head">
+          <h2 id="safety-title">Safety FAQ</h2>
+          <p class="section__lede">What this page can and cannot see.</p>
         </div>
-        <div id="est-result" aria-live="polite"></div>
-      </form>
-    </section>
-
-    <section id="difficulty">
-      <h2>Reference table</h2>
-      <p class="section-sub">Suffix matches at 100,000 keys/second. "Letter, either case" is a pattern like <span class="mono">pump</span>, not a digit.</p>
-      <div class="table-wrap glass-card table-card">
-        <table>
-          <thead>
-            <tr>
-              <th>Length</th>
-              <th>Case-sensitive</th>
-              <th>Letter, either case</th>
-              <th>Time @ 100k/s</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr><td>1</td><td>58</td><td>29</td><td>instant</td></tr>
-            <tr><td>2</td><td>3,364</td><td>841</td><td>instant</td></tr>
-            <tr><td>3</td><td>195,112</td><td>24,389</td><td>~2 seconds</td></tr>
-            <tr><td>4</td><td>11.3M</td><td>707k</td><td>~2 minutes</td></tr>
-            <tr><td>5</td><td>656M</td><td>20.5M</td><td>~1.8 hours</td></tr>
-            <tr><td>6</td><td>38.1B</td><td>595M</td><td>~4.4 days</td></tr>
-            <tr class="hard"><td>7</td><td>2.21T</td><td>17.2B</td><td>~8.5 months</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="table-note">The time column is the case-sensitive suffix. Prefixes that start outside 2–9, A–H, and J are much slower. Use the estimator for a specific pattern.</p>
-    </section>
-
-    <section id="safety">
-      <h2>Safety FAQ</h2>
-      <p class="section-sub">What this page can and cannot see.</p>
-      <div class="faq-list">
-        <details class="faq">
-          <summary>Do private keys leave the browser?</summary>
-          <p>No. Workers generate keypairs on your device and post the match back to this page. Keys are generated on your device; the only network call is payment verification. Those calls go to this site's own functions and carry your paying wallet's public address and a one-time code for the payment, never the pattern or the private key. The grind worker cannot open a connection: the browser enforces that.</p>
-        </details>
-        <details class="faq">
-          <summary>What should I save, and when does it disappear?</summary>
-          <p>Save the address and the private key before you close the tab. The private key is 64 bytes — the 32-byte seed followed by the public key — written in Base58, which is the form Solana wallets import. The key stays hidden until you click to reveal it, so a grind that finishes while you are away waits for you. About 60 seconds after you reveal it, the terminal wipes itself. A key line that is still visible redacts after two minutes. If you copied the key, the page tries to clear the clipboard about 60 seconds later when the browser allows a clipboard read.</p>
-        </details>
-        <details class="faq">
-          <summary>Is a vanity key weaker than a normal Solana key?</summary>
-          <p>No. It is a normal ed25519 keypair from <span class="mono">crypto.getRandomValues</span>. The search only keeps a public address that happens to contain your text. A short pattern is easy to find and just as strong as any other fresh key. Treat the private key like cash: anyone who has it controls the wallet. For a high-value address, run the page offline, then move the key to a hardware wallet or a password manager. Never paste it into a website, including this one.</p>
-        </details>
-        <details class="faq">
-          <summary>Why can a prefix take so much longer?</summary>
-          <p>About 94% of Solana addresses are 44 characters, and those start with <span class="mono">2–9</span>, <span class="mono">A–H</span>, or <span class="mono">J</span>. A first character outside that set is roughly 59× rarer than a common one. <span class="mono">1</span> and <span class="mono">J</span> are uncommon. Lowercase and letters after J are rare. Suffix and anywhere avoid that bias. The estimator states which case you are in before you start.</p>
-        </details>
-        <details class="faq">
-          <summary>Which characters are allowed?</summary>
-          <p>Base58: digits <span class="mono">1–9</span>, uppercase <span class="mono">A–H</span>, <span class="mono">J–N</span>, <span class="mono">P–Z</span>, and lowercase <span class="mono">a–k</span>, <span class="mono">m–z</span>. Zero, capital o, capital i, and lowercase L are excluded because they look like each other.</p>
-        </details>
-        <details class="faq">
-          <summary>Do you use analytics, cookies, or a wallet extension?</summary>
-          <p>No analytics, no cookies, and no web fonts. The $1 grind payment connects a Solana wallet through the Wallet Standard — Phantom, Solflare, Backpack, and others — and asks it to sign a transfer of exactly 1.00 USDC. That is the only transaction this page builds. The grind does not use that wallet, and the new private key is still generated on this device. Optional tips are a public address you copy into a wallet you already use.</p>
-        </details>
-        <details class="faq">
-          <summary>What does the tip line do?</summary>
-          <p>The tip line shows the same public address that receives the grind payment. Copy it into a wallet you already trust if you want to send a tip. The page does not learn whether a tip arrived. The grind payment is $1 in USDC per grind, paid from your wallet, and is checked by the site's own function.</p>
-        </details>
-        <details class="faq">
-          <summary>What is Pro?</summary>
-          <p>Pro is a feature flag in the site config, not a checkout. Off, which is the default, every run looks for one address, and patterns longer than five characters show a notice. On, the terminal can collect several matches in one run. Either way the keys stay in the tab. There is no card form and no payment API key in this project.</p>
-        </details>
-        <details class="faq">
-          <summary>How do I know this deploy was not tampered with?</summary>
-          <p>Use <span class="mono">vanitygrinder.com</span>, or a copy you built yourself from the public source. After load, open DevTools and confirm <span class="mono">connect-src</span> is <span class="mono">'self'</span>: the page can connect only back to this site. During a grind, the network panel should not add requests. A lookalike can remove those rules. This page will never ask you to paste a private key back in.</p>
-        </details>
+        <div class="faq">
+          <details>
+            <summary>Do private keys leave the browser?</summary>
+            <p>No. Workers generate keypairs on your device and post the match back to this page. Keys are generated on your device; the only network call is payment verification. Those calls go to this site's own functions and carry your paying wallet's public address and a one-time code for the payment, never the pattern or the private key. The grind worker cannot open a connection: the browser enforces that.</p>
+          </details>
+          <details>
+            <summary>What should I save, and when does it disappear?</summary>
+            <p>Save the address and the private key before you close the tab. The private key is 64 bytes — the 32-byte seed followed by the public key — written in Base58, which is the form Solana wallets import. The key stays hidden until you click to reveal it, so a grind that finishes while you are away waits for you. About 60 seconds after you reveal it, the terminal wipes itself. A key line that is still visible redacts after two minutes. If you copied the key, the page tries to clear the clipboard about 60 seconds later when the browser allows a clipboard read.</p>
+          </details>
+          <details>
+            <summary>Is a vanity key weaker than a normal Solana key?</summary>
+            <p>No. It is a normal ed25519 keypair from <span class="mono">crypto.getRandomValues</span>. The search only keeps a public address that happens to contain your text. A short pattern is easy to find and just as strong as any other fresh key. Treat the private key like cash: anyone who has it controls the wallet. For a high-value address, run the page offline, then move the key to a hardware wallet or a password manager. Never paste it into a website, including this one.</p>
+          </details>
+          <details>
+            <summary>Why can a prefix take so much longer?</summary>
+            <p>About 94% of Solana addresses are 44 characters, and those start with <span class="mono">2–9</span>, <span class="mono">A–H</span>, or <span class="mono">J</span>. A first character outside that set is roughly 59× rarer than a common one. <span class="mono">1</span> and <span class="mono">J</span> are uncommon. Lowercase and letters after J are rare. Suffix and anywhere avoid that bias. The generator and the estimator state which case you are in before you start.</p>
+          </details>
+          <details>
+            <summary>Which characters are allowed?</summary>
+            <p>Base58: digits <span class="mono">1–9</span>, uppercase <span class="mono">A–H</span>, <span class="mono">J–N</span>, <span class="mono">P–Z</span>, and lowercase <span class="mono">a–k</span>, <span class="mono">m–z</span>. Zero, capital o, capital i, and lowercase L are excluded because they look like each other.</p>
+          </details>
+          <details>
+            <summary>Do you use analytics, cookies, or a wallet extension?</summary>
+            <p>No analytics and no cookies. Fonts are served from this site; nothing is loaded from another host. The $1 grind payment connects a Solana wallet through the Wallet Standard — Phantom, Solflare, Backpack, and others — and asks it to sign a transfer of exactly 1.00 USDC. That is the only transaction this page builds. The grind does not use that wallet, and the new private key is still generated on this device. Optional tips are a public address you copy into a wallet you already use.</p>
+          </details>
+          <details>
+            <summary>What does the tip line do?</summary>
+            <p>The tip line shows the same public address that receives the grind payment. Copy it into a wallet you already trust if you want to send a tip. The page does not learn whether a tip arrived. The grind payment is $1 in USDC per grind, paid from your wallet, and is checked by the site's own function.</p>
+          </details>
+          <details>
+            <summary>What is Pro?</summary>
+            <p>Pro is a feature flag in the site config, not a checkout. Off, which is the default, every run looks for one address, and patterns longer than five characters show a notice. On, the generator can collect several matches in one run. Either way the keys stay in the tab. There is no card form and no payment API key in this project.</p>
+          </details>
+          <details>
+            <summary>How do I know this deploy was not tampered with?</summary>
+            <p>Use <span class="mono">vanitygrinder.com</span>, or a copy you built yourself from the public source. After load, open DevTools and confirm <span class="mono">connect-src</span> is <span class="mono">'self'</span>: the page can connect only back to this site. During a grind, the network panel should not add requests. A lookalike can remove those rules. This page will never ask you to paste a private key back in.</p>
+          </details>
+        </div>
       </div>
     </section>
 
-    <section id="support">
-      <h2>Optional tip and Pro</h2>
-      <p class="section-sub">Neither path can see your keys. There is no checkout and no payment secret in this project.</p>
-      <div class="support-grid">
-        <article class="glass-card" id="tip-card">
-          <h3>Tip the author</h3>
-          <p>If a vanity address was useful, you can send a tip to the public address below from a wallet you already trust. A tip is separate from the grind. The grind is $1 in USDC per grind, paid from your wallet.</p>
-          <p class="tip-address" id="tip-address">crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp</p>
-          <button type="button" id="tip-copy">Copy address</button>
-          <p class="fine" id="tip-note">Public address only. A tip is optional. The $1 grind payment is checked separately and does not reveal your new key.</p>
-        </article>
-        <article class="glass-card" id="pro-card">
-          <h3>Pro <span class="pill" id="pro-status">Off</span></h3>
-          <p id="pro-lead">Pro is a local feature flag for several matches in one run. It is off on this deploy. Long patterns still grind one address in this tab.</p>
-          <ul class="pro-list">
-            <li>Batch generation, up to 10 matches, when the operator turns the flag on</li>
-            <li>Patterns longer than 5 characters run either way; the notice is only a heads-up</li>
-            <li>No account, no card form, no payment processor</li>
-          </ul>
-        </article>
+    <section class="section" id="support" aria-labelledby="support-title">
+      <div class="wrap stack" data-stack="8">
+        <div class="stack section__head">
+          <h2 id="support-title">Optional tip and Pro</h2>
+          <p class="section__lede">Neither path can see your keys. There is no checkout and no payment secret in this project.</p>
+        </div>
+        <div class="vg-support">
+          <article class="stack vg-support__item" data-stack="4" id="tip-card" aria-labelledby="tip-title">
+            <h3 id="tip-title">Tip the author</h3>
+            <p class="vg-support__text">If a vanity address was useful, you can send a tip to the public address below from a wallet you already trust. A tip is separate from the grind. The grind is $1 in USDC per grind, paid from your wallet.</p>
+            <div class="copyfield">
+              <span class="copyfield__value" id="tip-address">crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp</span>
+              <button type="button" class="btn btn--ghost btn--sm" id="tip-copy" data-copy="#tip-address" hidden><svg class="icon icon--copy" aria-hidden="true"><use href="#i-copy" /></svg><svg class="icon icon--done" aria-hidden="true"><use href="#i-check" /></svg><span data-label>Copy</span></button>
+            </div>
+            <p class="hint" id="tip-note">Public address only. A tip is optional. The $1 grind payment is checked separately and does not reveal your new key.</p>
+          </article>
+          <article class="stack vg-support__item" data-stack="4" id="pro-card" aria-labelledby="pro-title">
+            <h3 class="row row--tight" id="pro-title">Pro <span class="pill" id="pro-status">Off</span></h3>
+            <p class="vg-support__text" id="pro-lead">Pro is a local feature flag for several matches in one run. It is off on this deploy. Long patterns still grind one address in this tab.</p>
+            <ul class="vg-list">
+              <li>Batch generation, up to 10 matches, when the operator turns the flag on</li>
+              <li>Patterns longer than 5 characters run either way; the notice is only a heads-up</li>
+              <li>No account, no card form, no payment processor</li>
+            </ul>
+          </article>
+        </div>
       </div>
     </section>
+  </main>
 
-    <footer id="footer">
-      <p>VanityGrinder · <a href="https://vanitygrinder.com/">vanitygrinder.com</a></p>
-      <p>Keys are generated on your device. The only network call is payment verification. <a href="https://github.com/DoradoDevs/solana-vanity-address-generator" rel="noopener noreferrer">Source</a> · MIT · DoradoDevs</p>
-    </footer>
-  </div>
+  <footer class="footer">
+    <div class="wrap row row--between">
+      <div class="stack" data-stack="2">
+        <p>VanityGrinder · <a href="https://vanitygrinder.com/">vanitygrinder.com</a></p>
+        <p>Keys are generated on your device. The only network call is payment verification.</p>
+      </div>
+      <ul class="footer__links">
+        <li><a href="https://github.com/DoradoDevs/solana-vanity-address-generator" rel="noopener noreferrer">Source</a></li>
+        <li>MIT</li>
+        <li>DoradoDevs</li>
+      </ul>
+    </div>
+  </footer>
 
   <script type="module" src="/src/main.js"></script>
 </body>

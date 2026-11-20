@@ -153,6 +153,21 @@ The reviewer reproduced the gate three times (227/227, build, cli 4/4, audit 0),
 | S18 | VG-18 | Fixed |
 | S21, S22 | VG-22 | Fixed (9273afb) |
 
+## UI redesign, 2026-11-20 (UX)
+
+Branch `ui/2026-11-20`. Page defects found in the before screenshots and fixed by the move to Quiet Technical 2.3. Not security findings; listed so the old behaviour is not brought back.
+
+| ID | Finding | Status | Regression test or check |
+|---|---|---|---|
+| UX-01 | The payment step sat above the terminal before any pattern was entered. | FIXED: it appears in the side panel only after Start grinding has measured the device. | screenshots `generator-ready`, `generator-pay` |
+| UX-02 | During a run the terminal promised a remaining time (ETA), which a random search cannot keep. | FIXED: replaced by a "found by now" probability readout. | ui.test "found-by-now probability…", "probability figures round down…" |
+| UX-03 | The headline was gradient text, with a matrix-rain canvas, blurred colour blobs, traffic-light dots and CRT scanlines around it. | FIXED: removed; the generator is framed in a plain window on a plinth. | `_design/tools/audit.mjs`, 0 failures |
+| UX-04 | Position and case were typed answers to terminal prompts; the choice buttons existed only on narrow screens. | FIXED: one form with radios, a checkbox and inline errors at every width. | screenshots `generator-invalid`, `generator-warning` |
+| UX-05 | The reference table marked hard rows, and the estimator its warnings, by colour alone. | FIXED: the row colour is gone; warnings carry a mark and a sentence. | audit axe, 0 serious |
+| UX-06 | Copy failures appeared as toasts, away from the key they were about. | FIXED: they are console lines under the key. | screenshot `generator-key` |
+| UX-07 | On a phone the Menu button's label sat off-centre and long console lines wrapped under the margin. | FIXED: system nav; console lines hang under their text. | screenshots `home-390`, `generator-key-390` |
+| UX-08 | The status line was far from the terminal it described. | FIXED: run state is a pill in the generator window's bar; `#live-status` stays the only live region. | ui.test "the console is a log that never speaks…" |
+
 ## Open and owner decisions
 
 - VG-20: turn off or gate deploy previews for fork pull requests.
@@ -164,3 +179,4 @@ The reviewer reproduced the gate three times (227/227, build, cli 4/4, audit 0),
 - VG-22: accept the jayson 5.0.0 override (outside web3.js's declared ^4.3.0) or pin back.
 - VG-23: the late-send status gap, unresolved (narrowed).
 - A-R16: typecheck/lint, suggestion only.
+- UI: the favicon is still an emoji; a brand mark is an open decision. The clipboard clear 60 s after copying the key is kept as before; confirm it is wanted.

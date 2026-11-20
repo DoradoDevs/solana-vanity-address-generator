@@ -1,0 +1,7287 @@
+/*
+ * Quiet Technical, v2.3.0 (2026-11-20)
+ * The shared design system for the DoradoDevs products.
+ *
+ * DO NOT EDIT A VENDORED COPY. Static sites and Vite apps copy this file
+ * byte for byte (Vite into public/) and record the version; Tailwind apps
+ * @import the same file into layer(qt); React Native and Python read
+ * tokens/tokens.{ts,py}, generated from it. Product rules go in your own
+ * product.css, loaded after this file and unlayered, so it wins. If
+ * something here is wrong, report it so the fix lands in all eight
+ * products at once.
+ *
+ *   <html lang="en" data-product="outpost">          one of: debate bait outpost
+ *                                                    watchpost cloudscanner memori
+ *                                                    pdfree vanity
+ *   <meta name="color-scheme" content="light dark">
+ *   <script src="/theme.js"></script>                 blocking, before the CSS
+ *   <link rel="stylesheet" href="/system.css">
+ *   <script src="/system.js" defer></script>          menus, copy, tabs, toasts
+ *
+ * Theme: the system preference decides; data-theme="light" | "dark" |
+ * "tinted" on any element overrides it for that subtree (theme.js applies
+ * the stored choice to <html>). Each colour is written once with both its
+ * values (see "Theme switches" below), so a dark stage inside a light page
+ * is just data-theme="dark" on the stage. Put dir="rtl" on <html>, not on
+ * an inner element.
+ *
+ * Support floor: Chrome/Edge 111, Firefox 115 ESR, Safari 16.4 (2023).
+ * Everything the page needs works there. Newer engines get extras that
+ * degrade quietly: the popover API (menus fall back to system.js), :has()
+ * (the centred nav, disabled-label greying), text-wrap, alt text on
+ * generated content, scroll-driven animation (the reading line).
+ *
+ * Everything is in cascade layers, so any unlayered product CSS beats it
+ * without !important. The first statement below also declares `legacy`
+ * first, so an old element rule a product cannot delete yet goes in
+ * `@layer legacy { ... }` in any file, loaded before or after this one,
+ * and still sits beneath the whole system. Tailwind: the first line of your
+ * entry CSS must be `@layer legacy, theme, base, qt, components, utilities;`,
+ * before any @import.
+ */
+
+@layer legacy, qt.tokens, qt.base, qt.layout, qt.components, qt.utilities, qt.modes;
+
+/* ── Fonts (self-hosted, OFL-1.1; see fonts/OFL.txt) ─────────────────────
+   Each subset downloads only when a page uses a character in its range.
+   Latin is last so it wins where ranges overlap. Arabic, Devanagari, Thai
+   and CJK are not shipped: they use the platform's own fonts (see the
+   :lang() rules below). */
+
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/geist-cyrillic-ext-wght-normal.woff2") format("woff2");
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/geist-cyrillic-wght-normal.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/geist-vietnamese-wght-normal.woff2") format("woff2");
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1,
+    U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/geist-latin-ext-wght-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/geist-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/geist-mono-cyrillic-ext-wght-normal.woff2") format("woff2");
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/geist-mono-cyrillic-wght-normal.woff2") format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/geist-mono-symbols2-wght-normal.woff2") format("woff2");
+  unicode-range: U+2000-2001, U+2004-2008, U+200A, U+23B8-23BD, U+2500-259F;
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/geist-mono-vietnamese-wght-normal.woff2") format("woff2");
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1,
+    U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/geist-mono-latin-ext-wght-normal.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/geist-mono-latin-wght-normal.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+    U+FEFF, U+FFFD;
+}
+
+/* Metric-matched stand-ins, used while Geist loads, so the page does not
+   move when it arrives. They cover only the ranges Geist ships: anything
+   else (Greek, Hebrew, arrows) goes straight to the platform's own face.
+   The mono stand-in prefers the platform's monospace; each gets its own
+   family because each needs its own size adjustment (Geist Mono advances
+   0.600em; DejaVu Sans Mono has Menlo's 0.602em; Roboto Mono, Liberation
+   Mono and Cousine have Courier New's 0.600em). Safari ignores the ascent
+   and descent overrides. */
+/* Widths measured 19 Nov 2026 over all the text of the reference and the
+   three examples (18,061 characters): Geist 400 is 102.1% of Arial, Geist
+   500 is 104.4% of Arial, Geist 600 is 99.7% of Arial Bold. Arial has no
+   medium, so 500 gets regular Arial scaled to Geist 500's width. Liberation
+   Sans and Arimo (Linux, ChromeOS) have Arial's widths (measured: within
+   0.03%), so they share its faces. Android has none of these and gets
+   Roboto, measured the same way (400 at 102.7%, 500 from Roboto regular at
+   105.0%, 600 from Roboto Bold at 105.7%); Linux without Liberation gets
+   DejaVu Sans (90.1%, 92.1%, and 83.6% from DejaVu Sans Bold). Each
+   override is Geist's own ascent or descent divided by the size-adjust. */
+@font-face {
+  font-family: "Geist Fallback";
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("LiberationSans"),
+    local("Arimo"), local("Arimo-Regular");
+  font-weight: 100 449;
+  size-adjust: 102.1%;
+  ascent-override: 99%;
+  descent-override: 29.1%;
+  line-gap-override: 0%;
+  unicode-range: U+0000-02FF, U+0300-0304, U+0308-0309, U+0323, U+0329, U+0400-052F,
+    U+1C80-1C8A, U+1D00-1DBF, U+1E00-1EFF, U+2000-206F, U+20A0-20C0, U+2113, U+2116, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+2C60-2C7F, U+2DE0-2DFF, U+A640-A69F, U+A720-A7FF,
+    U+FE2E-FE2F, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist Fallback";
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("LiberationSans"),
+    local("Arimo"), local("Arimo-Regular");
+  font-weight: 450 549;
+  size-adjust: 104.4%;
+  ascent-override: 99%;
+  descent-override: 29.1%;
+  line-gap-override: 0%;
+  unicode-range: U+0000-02FF, U+0300-0304, U+0308-0309, U+0323, U+0329, U+0400-052F,
+    U+1C80-1C8A, U+1D00-1DBF, U+1E00-1EFF, U+2000-206F, U+20A0-20C0, U+2113, U+2116, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+2C60-2C7F, U+2DE0-2DFF, U+A640-A69F, U+A720-A7FF,
+    U+FE2E-FE2F, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist Fallback";
+  src: local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold"),
+    local("LiberationSans-Bold"), local("Arimo Bold"), local("Arimo-Bold");
+  font-weight: 550 900;
+  size-adjust: 99.7%;
+  ascent-override: 101.6%;
+  descent-override: 29.8%;
+  line-gap-override: 0%;
+  unicode-range: U+0000-02FF, U+0300-0304, U+0308-0309, U+0323, U+0329, U+0400-052F,
+    U+1C80-1C8A, U+1D00-1DBF, U+1E00-1EFF, U+2000-206F, U+20A0-20C0, U+2113, U+2116, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+2C60-2C7F, U+2DE0-2DFF, U+A640-A69F, U+A720-A7FF,
+    U+FE2E-FE2F, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist Fallback Roboto";
+  src: local("Roboto"), local("Roboto-Regular");
+  font-weight: 100 449;
+  size-adjust: 102.7%;
+  ascent-override: 98.4%;
+  descent-override: 28.9%;
+  line-gap-override: 0%;
+  unicode-range: U+0000-02FF, U+0300-0304, U+0308-0309, U+0323, U+0329, U+0400-052F,
+    U+1C80-1C8A, U+1D00-1DBF, U+1E00-1EFF, U+2000-206F, U+20A0-20C0, U+2113, U+2116, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+2C60-2C7F, U+2DE0-2DFF, U+A640-A69F, U+A720-A7FF,
+    U+FE2E-FE2F, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist Fallback Roboto";
+  src: local("Roboto"), local("Roboto-Regular");
+  font-weight: 450 549;
+  size-adjust: 105.0%;
+  ascent-override: 96.3%;
+  descent-override: 28.3%;
+  line-gap-override: 0%;
+  unicode-range: U+0000-02FF, U+0300-0304, U+0308-0309, U+0323, U+0329, U+0400-052F,
+    U+1C80-1C8A, U+1D00-1DBF, U+1E00-1EFF, U+2000-206F, U+20A0-20C0, U+2113, U+2116, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+2C60-2C7F, U+2DE0-2DFF, U+A640-A69F, U+A720-A7FF,
+    U+FE2E-FE2F, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist Fallback Roboto";
+  src: local("Roboto Bold"), local("Roboto-Bold");
+  font-weight: 550 900;
+  size-adjust: 105.7%;
+  ascent-override: 95.6%;
+  descent-override: 28.1%;
+  line-gap-override: 0%;
+  unicode-range: U+0000-02FF, U+0300-0304, U+0308-0309, U+0323, U+0329, U+0400-052F,
+    U+1C80-1C8A, U+1D00-1DBF, U+1E00-1EFF, U+2000-206F, U+20A0-20C0, U+2113, U+2116, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+2C60-2C7F, U+2DE0-2DFF, U+A640-A69F, U+A720-A7FF,
+    U+FE2E-FE2F, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist Fallback DejaVu";
+  src: local("DejaVu Sans"), local("DejaVuSans");
+  font-weight: 100 449;
+  size-adjust: 90.1%;
+  ascent-override: 112.2%;
+  descent-override: 33.0%;
+  line-gap-override: 0%;
+  unicode-range: U+0000-02FF, U+0300-0304, U+0308-0309, U+0323, U+0329, U+0400-052F,
+    U+1C80-1C8A, U+1D00-1DBF, U+1E00-1EFF, U+2000-206F, U+20A0-20C0, U+2113, U+2116, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+2C60-2C7F, U+2DE0-2DFF, U+A640-A69F, U+A720-A7FF,
+    U+FE2E-FE2F, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist Fallback DejaVu";
+  src: local("DejaVu Sans"), local("DejaVuSans");
+  font-weight: 450 549;
+  size-adjust: 92.1%;
+  ascent-override: 109.8%;
+  descent-override: 32.2%;
+  line-gap-override: 0%;
+  unicode-range: U+0000-02FF, U+0300-0304, U+0308-0309, U+0323, U+0329, U+0400-052F,
+    U+1C80-1C8A, U+1D00-1DBF, U+1E00-1EFF, U+2000-206F, U+20A0-20C0, U+2113, U+2116, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+2C60-2C7F, U+2DE0-2DFF, U+A640-A69F, U+A720-A7FF,
+    U+FE2E-FE2F, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist Fallback DejaVu";
+  src: local("DejaVu Sans Bold"), local("DejaVuSans-Bold");
+  font-weight: 550 900;
+  size-adjust: 83.6%;
+  ascent-override: 120.9%;
+  descent-override: 35.5%;
+  line-gap-override: 0%;
+  unicode-range: U+0000-02FF, U+0300-0304, U+0308-0309, U+0323, U+0329, U+0400-052F,
+    U+1C80-1C8A, U+1D00-1DBF, U+1E00-1EFF, U+2000-206F, U+20A0-20C0, U+2113, U+2116, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+2C60-2C7F, U+2DE0-2DFF, U+A640-A69F, U+A720-A7FF,
+    U+FE2E-FE2F, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist Mono Fallback Menlo";
+  src: local("Menlo"), local("Menlo-Regular"), local("DejaVu Sans Mono"), local("DejaVuSansMono");
+  size-adjust: 99.7%;
+  ascent-override: 100.8%;
+  descent-override: 29.6%;
+  line-gap-override: 0%;
+  unicode-range: U+0000-02FF, U+0300-0304, U+0308-0309, U+0323, U+0329, U+0400-052F,
+    U+1C80-1C8A, U+1D00-1DBF, U+1E00-1EFF, U+2000-206F, U+20A0-20C0, U+2113, U+2116, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+2C60-2C7F, U+2DE0-2DFF, U+A640-A69F, U+A720-A7FF,
+    U+FE2E-FE2F, U+FEFF, U+FFFD,
+    U+23B8-23BD, U+2500-259F;
+}
+@font-face {
+  font-family: "Geist Mono Fallback Consolas";
+  src: local("Consolas");
+  size-adjust: 109.1%;
+  ascent-override: 92.1%;
+  descent-override: 27%;
+  line-gap-override: 0%;
+  unicode-range: U+0000-02FF, U+0300-0304, U+0308-0309, U+0323, U+0329, U+0400-052F,
+    U+1C80-1C8A, U+1D00-1DBF, U+1E00-1EFF, U+2000-206F, U+20A0-20C0, U+2113, U+2116, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+2C60-2C7F, U+2DE0-2DFF, U+A640-A69F, U+A720-A7FF,
+    U+FE2E-FE2F, U+FEFF, U+FFFD,
+    U+23B8-23BD, U+2500-259F;
+}
+@font-face {
+  font-family: "Geist Mono Fallback";
+  src: local("Courier New"), local("CourierNewPSMT"), local("Roboto Mono"), local("RobotoMono-Regular"),
+    local("Liberation Mono"), local("LiberationMono"), local("Cousine"), local("Cousine-Regular");
+  size-adjust: 100%;
+  ascent-override: 100.5%;
+  descent-override: 29.5%;
+  line-gap-override: 0%;
+  unicode-range: U+0000-02FF, U+0300-0304, U+0308-0309, U+0323, U+0329, U+0400-052F,
+    U+1C80-1C8A, U+1D00-1DBF, U+1E00-1EFF, U+2000-206F, U+20A0-20C0, U+2113, U+2116, U+2122,
+    U+2191, U+2193, U+2212, U+2215, U+2C60-2C7F, U+2DE0-2DFF, U+A640-A69F, U+A720-A7FF,
+    U+FE2E-FE2F, U+FEFF, U+FFFD,
+    U+23B8-23BD, U+2500-259F;
+}
+
+/* ── Tokens ──────────────────────────────────────────────────────────── */
+
+@layer qt.tokens {
+  /* Theme switches. Every colour token is written
+       var(--qt-light, <light value>) var(--qt-dark, <dark value>)
+     and at any element exactly one switch is empty (a single space), so the
+     other one's value is used. This is light-dark() built from custom
+     properties alone, which keeps the floor at 2023 engines. Keep the space
+     in `--qt-dark: ;`: an over-eager minifier that drops it breaks older
+     engines. The switches inherit, so data-theme on any element re-themes
+     its subtree. */
+  :root {
+    --qt-light: initial;
+    --qt-dark: ;
+    color-scheme: light;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --qt-light: ;
+      --qt-dark: initial;
+      color-scheme: dark;
+    }
+  }
+
+  [data-theme="light"],
+  [data-theme="tinted"],
+  [data-theme="pink"] {
+    --qt-light: initial;
+    --qt-dark: ;
+    color-scheme: light;
+  }
+
+  [data-theme="dark"] {
+    --qt-light: ;
+    --qt-dark: initial;
+    color-scheme: dark;
+  }
+
+  /* Writing direction as a number, for transforms and offsets that must
+     mirror: translateX(calc(1rem * var(--qt-dir))). Set by [dir] wherever it
+     appears, so an inner dir="rtl" region mirrors too. */
+  :root,
+  [dir="ltr"] {
+    --qt-dir: 1;
+  }
+  [dir="rtl"] {
+    --qt-dir: -1;
+  }
+
+  /* Product parameters. A page without data-product gets a neutral ink
+     accent, which looks deliberately unbranded so a missing setting is
+     noticed. Each product sets one hue (the neutrals lean a whisper toward
+     it) and its accent's lightness and chroma, tuned per product and per
+     theme so it stays inside sRGB and away from the status colours. */
+  :root {
+    --hue: 255;
+    --accent-l: 0.3;
+    --accent-c: 0;
+    --accent-dl: 0.9;
+    --accent-dc: 0;
+  }
+
+  /* Shape, per product: --shape scales every radius but the pill (0.75 for
+     the two security consoles, 1.25 for the two softer, social products),
+     --display-w is the hero line's weight (560 to 640). */
+  [data-product] {
+    --r-sm: calc(6px * var(--shape, 1));
+    --r-md: calc(8px * var(--shape, 1));
+    --r-lg: calc(12px * var(--shape, 1));
+    --r-xl: calc(16px * var(--shape, 1));
+  }
+
+  [data-product="outpost"] { --shape: 0.75; --display-w: 640; }
+  [data-product="cloudscanner"] { --shape: 0.75; --display-w: 620; }
+  [data-product="watchpost"] { --shape: 0.75; --display-w: 600; }
+  [data-product="bait"] { --shape: 1; --display-w: 620; }
+  [data-product="pdfree"] { --shape: 1; --display-w: 600; }
+  [data-product="vanity"] { --shape: 1; --display-w: 600; }
+  [data-product="debate"] { --shape: 1.25; --display-w: 580; }
+  [data-product="memori"] { --shape: 1.25; --display-w: 560; }
+
+  [data-product="memori"] { --hue: 350; --accent-l: 0.55; --accent-c: 0.13; --accent-dl: 0.77; --accent-dc: 0.1; }
+  [data-product="bait"] { --hue: 48; --accent-l: 0.38; --accent-c: 0.08; --accent-dl: 0.62; --accent-dc: 0.08; }
+  [data-product="watchpost"] { --hue: 262; --accent-l: 0.45; --accent-c: 0.09; --accent-dl: 0.74; --accent-dc: 0.08; }
+  [data-product="pdfree"] { --hue: 195; --accent-l: 0.51; --accent-c: 0.075; --accent-dl: 0.77; --accent-dc: 0.075; }
+  [data-product="cloudscanner"] { --hue: 232; --accent-l: 0.53; --accent-c: 0.095; --accent-dl: 0.76; --accent-dc: 0.105; }
+  /* Outpost: ink, like Debate's primary, with the neutrals leaning a
+     whisper toward night blue. v2.3 had Tailwind indigo-600 here (hue 275,
+     0.5, 0.13), the most recognisable template primary, and in dark it
+     went periwinkle. A signal hue was tried and refused: chartreuse and
+     olive (hue 105 to 125) sit 0.010 to 0.028 OKLab from warn and danger
+     for a deuteranope or protanope; every other free hue is inside 25
+     degrees of a sibling. Outpost's mark is its structure: the grid
+     plinth, mono hosts and the diff. */
+  [data-product="outpost"] { --hue: 275; --accent-l: 0.25; --accent-c: 0.02; --accent-dl: 0.93; --accent-dc: 0.01; }
+  [data-product="vanity"] { --hue: 315; --accent-l: 0.5; --accent-c: 0.1; --accent-dl: 0.75; --accent-dc: 0.08; }
+  /* Debate: the primary action is ink, so colour belongs to the two sides.
+     Side B is plum, not amber: amber sat within 0.05 (OKLab, worst of
+     normal, deutan and protan vision) of the Pro gold the app sells and of
+     the warn colour. Plum clears gold, both status colours and side A by
+     0.095 or more in both themes (tokens/contrast.md). --pro is the gold
+     as sold (#D4AF37): a fill behind --on-pro, never text on a light page. */
+  [data-product="debate"] {
+    --hue: 255;
+    --accent-l: 0.23;
+    --accent-c: 0.012;
+    --accent-dl: 0.94;
+    --accent-dc: 0.005;
+    --side-a: var(--qt-light, oklch(0.5 0.13 252)) var(--qt-dark, oklch(0.72 0.12 250));
+    --side-b: var(--qt-light, oklch(0.46 0.12 335)) var(--qt-dark, oklch(0.66 0.15 350));
+    --pro: #d4af37;
+    --on-pro: oklch(0.23 0.015 85);
+  }
+
+  /* The tokens. Declared on every element that sets a product or a theme,
+     so a subtree can be re-branded or re-themed. */
+  :root,
+  [data-product],
+  [data-theme] {
+    /* Neutrals: paper and ink, tinted toward the product hue. */
+    --bg: var(--qt-light, oklch(0.985 0.005 var(--hue))) var(--qt-dark, oklch(0.17 0.006 var(--hue)));
+    --surface: var(--qt-light, oklch(1 0 0)) var(--qt-dark, oklch(0.205 0.007 var(--hue)));
+    --raised: var(--qt-light, oklch(1 0 0)) var(--qt-dark, oklch(0.235 0.008 var(--hue)));
+    --sunken: var(--qt-light, oklch(0.965 0.007 var(--hue))) var(--qt-dark, oklch(0.145 0.006 var(--hue)));
+    --hover: var(--qt-light, oklch(0.952 0.008 var(--hue))) var(--qt-dark, oklch(0.245 0.008 var(--hue)));
+    --line: var(--qt-light, oklch(0.91 0.008 var(--hue))) var(--qt-dark, oklch(0.27 0.008 var(--hue)));
+    --line-strong: var(--qt-light, oklch(0.86 0.01 var(--hue))) var(--qt-dark, oklch(0.34 0.01 var(--hue)));
+    /* The edge of a field, checkbox, radio or switch: at least 3:1. */
+    --control-line: var(--qt-light, oklch(0.62 0.012 var(--hue))) var(--qt-dark, oklch(0.56 0.012 var(--hue)));
+
+    --text: var(--qt-light, oklch(0.23 0.015 var(--hue))) var(--qt-dark, oklch(0.94 0.005 var(--hue)));
+    --text-2: var(--qt-light, oklch(0.43 0.014 var(--hue))) var(--qt-dark, oklch(0.76 0.008 var(--hue)));
+    /* Faint, but still 4.5:1 on every surface it can sit on. */
+    --text-3: var(--qt-light, oklch(0.515 0.012 var(--hue))) var(--qt-dark, oklch(0.68 0.008 var(--hue)));
+
+    /* The accent. */
+    --accent:
+      var(--qt-light, oklch(var(--accent-l) var(--accent-c) var(--hue)))
+      var(--qt-dark, oklch(var(--accent-dl) var(--accent-dc) var(--hue)));
+    --accent-hover:
+      var(--qt-light, oklch(calc(var(--accent-l) - 0.06) var(--accent-c) var(--hue)))
+      var(--qt-dark, oklch(min(calc(var(--accent-dl) + 0.05), 0.97) var(--accent-dc) var(--hue)));
+    --accent-text:
+      var(--qt-light, oklch(calc(var(--accent-l) - 0.04) var(--accent-c) var(--hue)))
+      var(--qt-dark, oklch(calc(var(--accent-dl) + 0.045) var(--accent-dc) var(--hue)));
+    --accent-soft:
+      var(--qt-light, oklch(0.95 min(0.022, calc(var(--accent-c) * 0.25)) var(--hue)))
+      var(--qt-dark, oklch(0.27 calc(var(--accent-dc) * 0.35) var(--hue)));
+    --on-accent: var(--qt-light, oklch(0.99 0.003 var(--hue))) var(--qt-dark, oklch(0.17 0.02 var(--hue)));
+    --selection: color-mix(in oklab, var(--accent) 24%, var(--surface));
+    --featured: color-mix(in oklab, var(--accent-soft) 45%, var(--surface));
+    /* Where you are: the current page in a rail, the selected row. Neutral,
+       so it never reads as a status tint or a second accent. */
+    --current: var(--qt-light, oklch(0.94 0.01 var(--hue))) var(--qt-dark, oklch(0.285 0.01 var(--hue)));
+
+    /* Status. Never the accent, never colour alone: each has a shape and a
+       word (see .pill, .note, .sev). */
+    --ok: var(--qt-light, oklch(0.5 0.11 152)) var(--qt-dark, oklch(0.78 0.11 152));
+    --ok-soft: var(--qt-light, oklch(0.962 0.03 152)) var(--qt-dark, oklch(0.27 0.04 152));
+    --warn: var(--qt-light, oklch(0.52 0.11 70)) var(--qt-dark, oklch(0.82 0.1 80));
+    --warn-soft: var(--qt-light, oklch(0.962 0.036 85)) var(--qt-dark, oklch(0.27 0.035 80));
+    --danger: var(--qt-light, oklch(0.51 0.17 27)) var(--qt-dark, oklch(0.73 0.12 25));
+    --danger-soft: var(--qt-light, oklch(0.962 0.017 27)) var(--qt-dark, oklch(0.27 0.04 25));
+    /* The one filled destructive button: the confirm button in a dialog. */
+    --danger-solid: var(--qt-light, oklch(0.51 0.17 27)) var(--qt-dark, oklch(0.56 0.15 27));
+    --danger-solid-hover: var(--qt-light, oklch(0.45 0.17 27)) var(--qt-dark, oklch(0.5 0.15 27));
+    --on-danger: oklch(0.99 0.003 27);
+
+    --scrim: var(--qt-light, oklch(0.2 0.01 var(--hue) / 0.4)) var(--qt-dark, oklch(0.08 0.005 var(--hue) / 0.65));
+    --shadow-overlay: 0 1px 2px oklch(0.2 0.01 var(--hue) / 0.06),
+      0 12px 32px oklch(0.2 0.01 var(--hue) / 0.12);
+  }
+
+  /* A third, tinted light theme (Memori calls it "pink", and stores that
+     word, so it is accepted as an alias). Paper takes on the product hue;
+     ink and the accent stay the same. Measured for every product, offered
+     only where the product already has one. */
+  [data-theme="tinted"],
+  [data-theme="pink"] {
+    --bg: oklch(0.972 0.012 var(--hue));
+    --surface: oklch(0.993 0.003 var(--hue));
+    --raised: oklch(0.993 0.003 var(--hue));
+    --sunken: oklch(0.95 0.022 var(--hue));
+    --hover: oklch(0.94 0.024 var(--hue));
+    --current: oklch(0.925 0.016 var(--hue));
+    --line: oklch(0.895 0.024 var(--hue));
+    --line-strong: oklch(0.845 0.028 var(--hue));
+    --control-line: oklch(0.6 0.03 var(--hue));
+    --text-3: oklch(0.49 0.02 var(--hue));
+  }
+
+  :root {
+    /* Type */
+    --font-sans: "Geist", "Geist Fallback", "Geist Fallback Roboto", "Geist Fallback DejaVu",
+      ui-sans-serif, system-ui, -apple-system,
+      "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "Geist Mono", "Geist Mono Fallback Menlo", "Geist Mono Fallback Consolas",
+      "Geist Mono Fallback", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+    /* Sizes, each with the line height it is set on (lengths, so lines land
+       on the 4px grid). 12px is the floor, for single-line labels only. */
+    --fs-12: 0.75rem;   --lh-12: 1rem;
+    --fs-13: 0.8125rem; --lh-13: 1.25rem;
+    --fs-14: 0.875rem;  --lh-14: 1.25rem;
+    --fs-15: 0.9375rem; --lh-15: 1.5rem;
+    --fs-16: 1rem;      --lh-16: 1.5rem;
+    --fs-18: 1.125rem;  --lh-18: 1.75rem;
+    --fs-20: 1.25rem;   --lh-20: 1.75rem;
+    --fs-24: 1.5rem;    --lh-24: 2rem;
+    --fs-30: 1.875rem;  --lh-30: 2.25rem;
+    --fs-display: clamp(2rem, 1.3rem + 2.6vw, 3rem); /* 32 to 48px, never more */
+    --tracking-tight: -0.02em;
+    --tracking-display: -0.03em;
+
+    /* Space: a 4px grid */
+    --s-1: 0.25rem;
+    --s-2: 0.5rem;
+    --s-3: 0.75rem;
+    --s-4: 1rem;
+    --s-5: 1.25rem;
+    --s-6: 1.5rem;
+    --s-8: 2rem;
+    --s-10: 2.5rem;
+    --s-12: 3rem;
+    --s-16: 4rem;
+    --s-20: 5rem;
+    --s-24: 6rem;
+
+    /* Shape */
+    --r-sm: 6px;
+    --r-md: 8px;
+    --r-lg: 12px;
+    --r-xl: 16px;
+    --r-pill: 999px;
+
+    /* Controls. Every field, select, button and segmented control in a row
+       is exactly --control-h tall, so their edges line up. */
+    --control-h: 2.5rem;
+    --control-h-sm: 2rem;
+    --control-h-lg: 3rem;
+    --target: 2.75rem; /* 44px: the size of anything touched */
+    /* Interface text: buttons, tabs, table cells, menus. */
+    --fs-ui: var(--fs-14);
+    --lh-ui: var(--lh-14);
+    /* Table cell padding above the text; below it is 1px less, for the
+       rule, so rows are 44px at the default density and every row starts
+       on a whole pixel. */
+    --cell-pad: var(--s-3);
+    --rail-h: 2.25rem;
+
+    /* Motion: 120, 180 or 240ms on one curve; colour, opacity and
+       transform only. */
+    --ease: cubic-bezier(0.2, 0, 0, 1);
+    --t-fast: 120ms;
+    --t-base: 180ms;
+    --t-slow: 240ms;
+
+    /* Layout */
+    --w-page: 70rem;   /* 1120px */
+    --w-prose: 34rem;  /* 60 to 70 characters of 16px Geist */
+    --w-field: 28rem;
+    --gutter: clamp(1.25rem, 4vw, 2rem);
+    --nav-h: 3.75rem;
+  }
+
+  /* Dense tool chrome (PDFree's editor, toolbars, inspectors): 32px
+     controls, 13px interface text, 32px table rows and rail items, a 48px
+     bar. Body copy stays 16px. */
+  [data-density="compact"] {
+    --control-h: 2rem;
+    --control-h-sm: 1.75rem;
+    --control-h-lg: 2.5rem;
+    --fs-ui: var(--fs-13);
+    --lh-ui: var(--lh-13);
+    --cell-pad: 0.375rem;
+    --rail-h: 2rem;
+    --nav-h: 3rem;
+  }
+
+  @media (pointer: coarse) {
+    :root,
+    [data-density] {
+      --control-h: var(--target);
+      --control-h-lg: 3rem;
+      --rail-h: var(--target);
+    }
+  }
+}
+
+/* ── Base ────────────────────────────────────────────────────────────── */
+
+@layer qt.base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    /* A focused control is never scrolled under the sticky bar, nor flush
+       against the bottom edge where a toast or a phone's bar sits. */
+    scroll-padding-block: calc(var(--nav-h) + var(--s-4)) max(var(--s-16), calc(var(--qt-toasts-h, 0px) + var(--s-4)));
+    /* While toasts show, the page grows by their height below everything,
+       so the last controls (a footer's links) can still scroll clear of
+       them. Space added under the content moves nothing on screen. */
+    padding-block-end: var(--qt-toasts-h, 0px);
+  }
+
+  /* Safari hangs an opening quote into the margin. Only on running text:
+     it is inherited, and in a cell, button or code block it would clip. */
+  .prose > p,
+  .lede,
+  .display {
+    hanging-punctuation: first;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    html:focus-within {
+      scroll-behavior: smooth;
+    }
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: var(--fs-16);
+    line-height: var(--lh-16);
+    overflow-wrap: break-word;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* A themed or branded subtree paints its own ink and paper. */
+  :is([data-theme], [data-product]):not(:root) {
+    color: var(--text);
+  }
+
+  [data-theme]:not(:root) {
+    background-color: var(--bg);
+  }
+
+  [hidden]:not([hidden="until-found"]) {
+    display: none !important;
+  }
+
+  /* No script: every choice of a command block is shown (the tabs that
+     would choose between them are not drawn; see .code__tabs). Here, in
+     the same layer as the rule above, because an !important in a later
+     layer loses to it. */
+  @media (scripting: none) {
+    .code > pre[role="tabpanel"][hidden] {
+      display: block !important;
+    }
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    text-wrap: balance;
+    overflow-wrap: break-word;
+  }
+
+  /* Heading sizes belong to roles, not only to tags: h1 is the page title
+     of an app, legal or account page. The marketing hero uses .display. */
+  h1 {
+    font-size: var(--fs-30);
+    line-height: var(--lh-30);
+  }
+
+  h2 {
+    font-size: var(--fs-24);
+    line-height: var(--lh-24);
+  }
+
+  h3 {
+    font-size: var(--fs-18);
+    line-height: var(--lh-18);
+    letter-spacing: -0.01em;
+  }
+
+  h4 {
+    font-size: var(--fs-16);
+    line-height: var(--lh-16);
+    letter-spacing: -0.005em;
+  }
+
+  p,
+  dl,
+  dd,
+  blockquote,
+  figure {
+    margin: 0;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  ul,
+  ol {
+    margin: 0;
+    padding: 0;
+  }
+
+  a {
+    color: var(--accent-text);
+    text-decoration-line: underline;
+    text-decoration-thickness: 1px;
+    /* At least 3:1 against the paper for every product and theme
+       (tools/contrast.mjs checks it), so the underline alone marks a link. */
+    text-decoration-color: color-mix(in oklab, currentColor 75%, transparent);
+    text-underline-offset: 0.22em;
+    transition: color var(--t-fast) var(--ease),
+      text-decoration-color var(--t-fast) var(--ease);
+  }
+
+  a:hover {
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 2px;
+  }
+
+  /* One focus dialect for every control: a 2px outline with a 2px gap.
+     An outline survives forced colours and follows the radius. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  /* Targets of skip links and programmatic focus do not need a ring. */
+  [tabindex="-1"]:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  ::selection {
+    background: var(--selection);
+    color: var(--text);
+  }
+
+  hr {
+    height: 0;
+    margin: 0;
+    border: 0;
+    border-block-start: 1px solid var(--line);
+  }
+
+  img,
+  svg,
+  video,
+  canvas {
+    display: block;
+    max-width: 100%;
+  }
+
+  img,
+  video {
+    height: auto;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+    letter-spacing: inherit;
+  }
+
+  code,
+  kbd,
+  samp,
+  pre {
+    font-family: var(--font-mono);
+    font-size: 1em;
+  }
+
+  /* Inline code inside a sentence is a touch smaller; never below 12px. */
+  :is(p, li, dd, td, summary, .note, .hint) > :is(code, kbd, samp) {
+    font-size: max(0.9em, 0.75rem);
+  }
+
+  :is(p, li, dd, td, .note) > code {
+    padding: 0.0625rem 0.3125rem;
+    border-radius: 4px;
+    background: var(--sunken);
+    overflow-wrap: anywhere;
+  }
+
+  /* Machine facts keep their left-to-right order inside right-to-left
+     text, and never break a sentence's direction. */
+  code,
+  kbd,
+  samp,
+  pre,
+  time,
+  .mono,
+  .num,
+  .value {
+    unicode-bidi: isolate;
+  }
+
+  /* Domains, keys, commands and hashes read left to right even on a
+     right-to-left page (an input's text then starts at the left, as it
+     should for this kind of value). */
+  :is(code, kbd, samp, pre, .mono, .value) {
+    direction: ltr;
+  }
+
+  /* ...but a block of it still lines up with its neighbours: on a
+     right-to-left page a .value sits at the right, like the label above. */
+  :is(.mono, .num, .value):not(input, textarea, pre) {
+    text-align: match-parent;
+  }
+
+  /* Dates and figures take their direction from their own words, like
+     dir="auto": "16 Nov, 09:12 UTC" stays in order on a right-to-left
+     page, and a date formatted in Arabic still reads right to left. */
+  :is(time, .num) {
+    unicode-bidi: plaintext;
+  }
+
+  table {
+    border-collapse: collapse;
+  }
+
+  /* ── Scripts other than Latin, Cyrillic and Vietnamese ──
+     Geist has no Arabic, Devanagari, Thai or CJK glyphs. Those pages use
+     the platform's own face throughout (so a word never mixes two fonts),
+     with no tracking and no capitals, and a little more line height. */
+  :lang(ar),
+  :lang(fa),
+  :lang(he),
+  :lang(ur) {
+    --font-sans: system-ui, "Segoe UI", "Noto Sans Arabic", "Geeza Pro", Tahoma, sans-serif;
+  }
+
+  :lang(hi),
+  :lang(th) {
+    --font-sans: system-ui, "Segoe UI", "Nirmala UI", "Leelawadee UI", "Noto Sans", sans-serif;
+  }
+
+  /* One stack per language: a shared CJK stack draws Japanese in a Chinese
+     face (wrong glyph forms) on Windows, where system-ui has no CJK. */
+  :lang(ja) {
+    --font-sans: system-ui, "Hiragino Sans", "Yu Gothic UI", "Meiryo", "Noto Sans JP",
+      "Noto Sans CJK JP", sans-serif;
+  }
+
+  :lang(ko) {
+    --font-sans: system-ui, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR",
+      "Noto Sans CJK KR", sans-serif;
+  }
+
+  :lang(zh) {
+    --font-sans: system-ui, "PingFang SC", "Microsoft YaHei UI", "Noto Sans SC",
+      "Noto Sans CJK SC", sans-serif;
+  }
+
+  /* A lang attribute inside the page (a quotation, a flashcard) changes the
+     face too. Products that change fonts do it on these same :lang()
+     selectors, not on :root, which they would not reach. */
+  [lang]:not(:root) {
+    font-family: var(--font-sans);
+  }
+
+  /* Vietnamese is Latin script, but its stacked diacritics (ệ, ở) touch
+     under tight tracking and a short heading line, so it is listed here on
+     purpose (DESIGN.md, Type). */
+  :is(:lang(ar), :lang(fa), :lang(he), :lang(ur), :lang(hi), :lang(th), :lang(zh), :lang(ja), :lang(ko), :lang(vi)) {
+    --tracking-tight: 0;
+    --tracking-display: 0;
+  }
+
+  :is(:lang(ar), :lang(fa), :lang(ur), :lang(hi), :lang(th), :lang(vi)) :is(h1, h2, h3, .display) {
+    line-height: 1.4;
+  }
+}
+
+/* ── Layout ──────────────────────────────────────────────────────────── */
+
+@layer qt.layout {
+  .wrap {
+    width: 100%;
+    max-width: calc(var(--w-page) + 2 * var(--gutter));
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+
+  .section {
+    padding-block: clamp(var(--s-12), 7vw, var(--s-20));
+  }
+
+  .section--quiet {
+    padding-block: clamp(var(--s-12), 6vw, var(--s-16));
+  }
+
+  .section + .section {
+    border-top: 1px solid var(--line);
+  }
+
+  /* After a marketing hero, space alone separates sections: one separator
+     style, not space and a rule. */
+  .hero ~ .section {
+    border-top: 0;
+  }
+
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-3);
+  }
+
+  .row--between { justify-content: space-between; }
+  .row--end { justify-content: flex-end; }
+  .row--nowrap { flex-wrap: nowrap; }
+  .row--tight { gap: var(--s-2); }
+
+  .prose,
+  .measure {
+    max-width: var(--w-prose);
+  }
+
+  /* Marketing hero: copy and a real artifact side by side, stacked under
+     60rem with the artifact second. */
+  .hero {
+    padding-block: clamp(var(--s-12), 8vw, var(--s-24)) clamp(var(--s-8), 4vw, var(--s-12));
+  }
+
+  .hero__grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    /* The artifact's top sits level with the copy's first line, so the eye
+       reads across one line, not into a gap above or below a centred card. */
+    align-items: start;
+    gap: clamp(var(--s-8), 6vw, var(--s-16));
+  }
+
+  .hero__actions {
+    padding-block-start: var(--s-2);
+  }
+
+  .display {
+    font-size: var(--fs-display);
+    /* Size plus 4px: 36px lines at 32px, 52px at 48px. */
+    line-height: calc(var(--fs-display) + 0.25rem);
+    letter-spacing: var(--tracking-display);
+    font-weight: var(--display-w, 600);
+    /* In em, not ch: ch is the width of the loaded font's "0", so 18ch was
+       590px at 48px in Geist but 475px in the Arial fallback, and the
+       headline gained a line, then lost it when Geist arrived (a layout
+       shift). 12.25em is the same 18 Geist digits in either font. */
+    max-width: 12.25em;
+  }
+
+  .section__head {
+    max-width: 40rem;
+  }
+
+  /* A marketing section's heading and its lede: 24px then 30px from 60rem,
+     and a 20px lede between the heading and 15px body text. */
+  .section__head > h2 {
+    font-size: var(--fs-24);
+    line-height: var(--lh-24);
+  }
+
+  @media (min-width: 60rem) {
+    .hero ~ .section .section__head > h2 {
+      font-size: var(--fs-30);
+      line-height: var(--lh-30);
+    }
+  }
+
+  .section__lede {
+    max-width: 36rem;
+    color: var(--text-2);
+    font-size: var(--fs-18);
+    line-height: var(--lh-18);
+  }
+
+  @media (min-width: 60rem) {
+    .section__lede {
+      font-size: var(--fs-20);
+      line-height: var(--lh-20);
+    }
+  }
+
+  .split {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    gap: clamp(var(--s-8), 6vw, var(--s-16));
+    align-items: start;
+  }
+
+  @media (max-width: 59.99rem) {
+    .hero__grid,
+    .split {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  /* ── App shell: a bar, a rail and the content. Not a framed card.
+     The layout follows the shell's own width, so it also works inside a
+     panel. Below 60rem the rail becomes a strip that scrolls sideways under
+     the bar, with a fade at the edge that has more. */
+  /* Size containers are given a width: a container sizes as if empty, so
+     inside a flex row, a centred column or a fit-content box it would
+     otherwise collapse to nothing. */
+  .shell {
+    container: shell / inline-size;
+    width: 100%;
+    min-height: 100dvh;
+    background: var(--bg);
+  }
+
+  .shell__grid {
+    display: grid;
+    grid-template-columns: 15rem minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+      "bar bar"
+      "rail main";
+    min-height: inherit;
+  }
+
+  .shell__bar {
+    grid-area: bar;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-height: var(--nav-h);
+    padding-inline: var(--s-5);
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+  }
+
+  .shell__rail {
+    grid-area: rail;
+    position: sticky;
+    top: var(--nav-h);
+    align-self: start;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    height: calc(100dvh - var(--nav-h));
+    padding: var(--s-4) var(--s-3);
+    overflow-y: auto;
+    border-inline-end: 1px solid var(--line);
+  }
+
+  .shell__main {
+    grid-area: main;
+    min-width: 0;
+    padding: var(--s-8) clamp(var(--s-5), 4cqi, var(--s-10)) var(--s-16);
+  }
+
+  .shell__content {
+    max-width: var(--w-page);
+  }
+
+  @container shell (width < 60rem) {
+    .shell__grid {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto auto 1fr;
+      grid-template-areas: "bar" "rail" "main";
+    }
+
+    .shell__rail {
+      position: static;
+      flex-direction: row;
+      gap: var(--s-1);
+      height: auto;
+      padding: var(--s-2) var(--s-4);
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+      border-inline-end: 0;
+      border-bottom: 1px solid var(--line);
+      /* Edge fades that appear only while there is more to scroll to. */
+      background:
+        linear-gradient(to right, var(--bg) 30%, transparent) left / 2.5rem 100% no-repeat local,
+        linear-gradient(to left, var(--bg) 30%, transparent) right / 2.5rem 100% no-repeat local,
+        linear-gradient(to right, var(--line-strong), transparent) left / 0.75rem 100% no-repeat scroll,
+        linear-gradient(to left, var(--line-strong), transparent) right / 0.75rem 100% no-repeat scroll,
+        var(--bg);
+    }
+
+    .shell__rail .rail__label,
+    .shell__rail .rail__foot {
+      display: none;
+    }
+
+    .shell__rail .rail__item {
+      flex: none;
+      /* A focused item is scrolled clear of the edge fade. */
+      scroll-margin-inline: var(--s-10);
+    }
+
+    .shell__main {
+      padding: var(--s-6) var(--s-5) var(--s-12);
+    }
+  }
+
+  /* Page header inside an app: one title, an optional line under it, the
+     actions at the end with at most one primary. */
+  .page__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--s-4) var(--s-6);
+    margin-block-end: var(--s-8);
+  }
+
+  .page__title {
+    font-size: var(--fs-24);
+    line-height: var(--lh-24);
+  }
+
+  /* Section headings inside an app sit one step under the page title, so
+     the order holds at every width: title 24 (20 on phones), section 18,
+     sub-section 16. Outside .shell, h2 stays 24 (marketing sections). */
+  .shell h2,
+  .page__section-title {
+    font-size: var(--fs-18);
+    line-height: var(--lh-18);
+    letter-spacing: -0.01em;
+  }
+
+  .shell h3 {
+    font-size: var(--fs-16);
+    line-height: var(--lh-16);
+    letter-spacing: -0.005em;
+  }
+
+  /* Phones: a document's h1 drops to 24 and an app's title to 20 (the stat
+     figure follows the title: see .stat__value). */
+  @media (max-width: 47.99rem) {
+    h1 {
+      font-size: var(--fs-24);
+      line-height: var(--lh-24);
+    }
+
+    .page__title {
+      font-size: var(--fs-20);
+      line-height: var(--lh-20);
+    }
+  }
+
+  /* Centered single column: sign-in, link sent, checkout return, errors. */
+  .narrow {
+    width: 100%;
+    max-width: 24rem;
+    margin-inline: auto;
+  }
+}
+
+/* ── Components ──────────────────────────────────────────────────────── */
+
+@layer qt.components {
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .skip-link {
+    position: absolute;
+    top: var(--s-2);
+    inset-inline-start: var(--s-2);
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    min-height: var(--control-h);
+    padding: var(--s-2) var(--s-4);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-md);
+    background: var(--raised);
+    color: var(--text);
+    transform: translateY(calc(-100% - var(--s-4)));
+  }
+
+  .skip-link:focus-visible {
+    box-shadow: var(--shadow-overlay);
+    transform: none;
+  }
+
+  /* The eyebrow: an optional line above the hero headline, sentence case,
+     at most about 32 characters, at most one per page. Not a default part
+     of a hero: the uppercase letter-spaced mono label over every headline
+     was a template tell (v2.3). .eyebrow--mono is for a real command or
+     version string, never for a slogan. */
+  .eyebrow {
+    color: var(--text-3);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+    font-weight: 500;
+  }
+
+  .eyebrow--mono {
+    font-family: var(--font-mono);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    font-weight: 400;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
+  .lede {
+    max-width: 36rem;
+    font-size: var(--fs-18);
+    line-height: var(--lh-18);
+    color: var(--text-2);
+  }
+
+  .hint {
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    color: var(--text-3);
+  }
+
+  /* ── Navigation bar ── */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+  }
+
+  .nav__inner {
+    display: flex;
+    /* Never wraps at the system's own sizes; only when a long name and the
+       actions cannot share 320px (enlarged text spacing, very long product
+       names) do the actions drop under the wordmark instead of scrolling
+       the whole page sideways. */
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-1) var(--s-4);
+    min-height: var(--nav-h);
+  }
+
+  /* With links, from 60rem: wordmark, links truly centred, actions. */
+  @media (min-width: 60rem) {
+    .nav__inner:has(> .nav__links) {
+      display: grid;
+      grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+    }
+
+    .nav__inner:has(> .nav__links) > .wordmark {
+      justify-self: start;
+    }
+
+    .nav__inner:has(> .nav__links) > .nav__actions {
+      justify-self: end;
+    }
+  }
+
+  .wordmark {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-2);
+    min-width: 0;
+    min-height: var(--control-h);
+    margin: calc(-1 * var(--s-1)) calc(-1 * var(--s-2));
+    padding: var(--s-1) var(--s-2);
+    border-radius: var(--r-md);
+    color: var(--text);
+    font-size: var(--fs-16);
+    line-height: var(--lh-16);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  .wordmark:hover {
+    color: var(--text);
+  }
+
+  .shell__bar > .wordmark {
+    margin-inline-end: auto;
+  }
+
+  .wordmark__glyph {
+    flex: none;
+    width: 1.25rem;
+    height: 1.25rem;
+    color: var(--accent);
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .nav__links {
+    display: flex;
+    align-items: center;
+    gap: var(--s-1);
+    margin-inline: auto;
+    list-style: none;
+  }
+
+  .nav__link {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.25rem;
+    padding-inline: var(--s-3);
+    border-radius: var(--r-md);
+    color: var(--text-2);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+    font-weight: 500;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+  }
+
+  .nav__link:hover {
+    color: var(--text);
+    background: var(--hover);
+    text-decoration: none;
+  }
+
+  /* The current page carries a mark, not only a tint. */
+  .nav__link[aria-current="page"] {
+    color: var(--text);
+  }
+
+  .nav__link[aria-current="page"]::after {
+    content: "";
+    position: absolute;
+    inset-inline: var(--s-3);
+    bottom: 0.125rem;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+
+  .nav__actions {
+    display: flex;
+    flex: none;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--s-2);
+    margin-inline-start: auto;
+  }
+
+  .nav__links + .nav__actions {
+    margin-inline-start: 0;
+  }
+
+  /* Small screens: the links and the secondary action move into a Menu
+     disclosure (a native details element: works with no script). */
+  .nav__menu {
+    display: none;
+  }
+
+  .nav__menu > summary {
+    list-style: none;
+  }
+
+  .nav__menu > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /* Down-pointing chevrons are drawn with physical borders on purpose:
+     they point the same way in both directions. */
+  .nav__menu > summary::after {
+    content: "";
+    width: 0.4rem;
+    height: 0.4rem;
+    margin-inline-start: var(--s-1);
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+    transition: transform var(--t-base) var(--ease);
+  }
+
+  .nav__menu[open] > summary::after {
+    transform: translateY(1px) rotate(-135deg);
+  }
+
+  .nav__panel {
+    position: absolute;
+    inset-inline: 0;
+    top: 100%;
+    display: grid;
+    gap: var(--s-4);
+    max-height: calc(100dvh - var(--nav-h));
+    padding: var(--s-2) var(--gutter) var(--s-6);
+    overflow-y: auto;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+    box-shadow: 0 16px 24px -16px oklch(0 0 0 / 0.18);
+  }
+
+  .nav__panel ul {
+    display: grid;
+    list-style: none;
+  }
+
+  .nav__panel .nav__link {
+    display: flex;
+    min-height: var(--target);
+    padding-inline: var(--s-2);
+    border-bottom: 1px solid var(--line);
+    border-radius: 0;
+    color: var(--text);
+    font-size: var(--fs-16);
+  }
+
+  .nav__panel .nav__link[aria-current="page"]::after {
+    inset-block: var(--s-3);
+    inset-inline: 0 auto;
+    width: 2px;
+    height: auto;
+  }
+
+  .nav__panel .row .btn {
+    flex: 1 1 10rem;
+  }
+
+  @media (max-width: 59.99rem) {
+    .nav > .wrap > .nav__links,
+    .nav__actions > .nav__secondary {
+      display: none;
+    }
+
+    .nav__links + .nav__actions {
+      margin-inline-start: auto;
+    }
+
+    .nav__menu {
+      display: block;
+    }
+  }
+
+  @media (max-width: 29.99rem) {
+    .nav__actions > .nav__cta {
+      display: none;
+    }
+  }
+
+  @media (min-width: 60rem) {
+    .nav__menu {
+      display: none !important;
+    }
+  }
+
+  /* ── Buttons ── */
+  .btn {
+    --btn-bg: var(--surface);
+    --btn-fg: var(--text);
+    --btn-line: var(--line-strong);
+    --btn-bg-hover: var(--hover);
+    --btn-h: var(--control-h);
+    --btn-lh: var(--lh-ui);
+
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s-2);
+    max-width: 100%;
+    min-height: var(--btn-h);
+    /* Exactly --btn-h tall on one line, so a button and a field in the same
+       row share their top and bottom edges. */
+    padding: max(0px, calc((var(--btn-h) - var(--btn-lh) - 2px) / 2)) var(--s-4);
+    border: 1px solid var(--btn-line);
+    border-radius: var(--r-md);
+    background: var(--btn-bg);
+    color: var(--btn-fg);
+    font-family: var(--font-sans);
+    font-size: var(--fs-ui);
+    line-height: var(--btn-lh);
+    font-weight: 500;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
+      color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
+  }
+
+  .btn:hover {
+    background: var(--btn-bg-hover);
+    color: var(--btn-fg);
+    text-decoration: none;
+  }
+
+  /* Pressed: a 2% scale, so the press reads without moving the layout. */
+  .btn:active {
+    background: var(--btn-bg-active, color-mix(in oklab, var(--btn-bg-hover) 88%, var(--text)));
+    transform: scale(0.98);
+  }
+
+  .btn--primary {
+    --btn-bg: var(--accent);
+    --btn-fg: var(--on-accent);
+    --btn-line: transparent;
+    --btn-bg-hover: var(--accent-hover);
+    --btn-bg-active: var(--accent-hover);
+    /* One pixel of light along the top edge: the only depth a primary
+       button has. */
+    box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.14);
+  }
+
+  .btn--ghost {
+    --btn-bg: transparent;
+    --btn-line: transparent;
+    --btn-fg: var(--text-2);
+  }
+
+  /* A ghost button standing alone under text: its label lines up with the
+     text column, not its invisible padding. */
+  .btn--flush {
+    margin-inline-start: calc(-1 * var(--s-4));
+  }
+
+  .btn--sm.btn--flush {
+    margin-inline-start: calc(-1 * var(--s-3));
+  }
+
+  .btn--ghost:hover {
+    color: var(--text);
+  }
+
+  /* Pressed: a toggle (a tool mode, mute, a view option) is aria-pressed on
+     a button whose name does not change. On: the neutral current fill, the
+     label at full ink and a 2px accent bar along the bottom (the 3:1 mark);
+     off: the button as it is. */
+  .btn[aria-pressed="true"] {
+    --btn-bg: var(--current);
+    --btn-fg: var(--text);
+    --btn-bg-hover: color-mix(in oklab, var(--current) 60%, var(--hover));
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+
+  /* Destructive actions are quiet by default: an outline in the danger
+     colour, never a second loud filled button beside the primary. */
+  .btn--danger {
+    --btn-fg: var(--danger);
+    --btn-line: color-mix(in oklab, var(--danger) 55%, var(--surface));
+    --btn-bg-hover: var(--danger-soft);
+  }
+
+  /* The only filled destructive button: the confirm step of a dialog. */
+  .btn--danger-solid {
+    --btn-bg: var(--danger-solid);
+    --btn-fg: var(--on-danger);
+    --btn-line: transparent;
+    --btn-bg-hover: var(--danger-solid-hover);
+    --btn-bg-active: var(--danger-solid-hover);
+  }
+
+  .btn--sm {
+    --btn-h: var(--control-h-sm);
+    --btn-lh: var(--lh-13);
+    padding-inline: var(--s-3);
+    border-radius: var(--r-sm);
+    font-size: var(--fs-13);
+  }
+
+  .btn--lg {
+    --btn-h: var(--control-h-lg);
+    --btn-lh: var(--lh-16);
+    padding-inline: var(--s-5);
+    font-size: var(--fs-16);
+  }
+
+  .btn--block {
+    width: 100%;
+  }
+
+  /* Icon-only: square, and it must have an accessible name (aria-label or
+     aria-labelledby pointing at its tooltip). Toolbars only. */
+  .btn--icon {
+    width: var(--btn-h);
+    padding: 0;
+  }
+
+  .btn > .icon {
+    flex: none;
+  }
+
+  /* Disabled and aria-disabled look the same and do not react. A working
+     button stays focusable: it sets aria-disabled, not disabled. */
+  /* In dark, --sunken is darker than the page, so a filled disabled
+     button would read as the heaviest in its row: there it is a hairline
+     outline on nothing, and recedes. */
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
+    --btn-off: var(--qt-light, var(--sunken)) var(--qt-dark, transparent);
+    --btn-bg: var(--btn-off);
+    --btn-fg: var(--text-3);
+    --btn-line: var(--line);
+    --btn-bg-hover: var(--btn-off);
+    --btn-bg-active: var(--btn-off);
+    box-shadow: none;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* Busy: the button keeps its size and its accessible name; the label is
+     hidden behind a centred spinner, so nothing beside it moves, and the
+     button ignores activation (system.js). Say what is happening in a
+     status region, not by changing the label. */
+  .btn[aria-busy="true"] {
+    --btn-bg: var(--btn-bg-busy, var(--btn-bg));
+    color: transparent;
+    cursor: progress;
+  }
+
+  .btn--primary[aria-busy="true"] {
+    --btn-bg: var(--accent);
+    --btn-fg: var(--on-accent);
+    --btn-line: transparent;
+    --btn-bg-hover: var(--accent);
+  }
+
+  .btn[aria-busy="true"]::before,
+  .spinner {
+    content: "";
+    flex: none;
+    width: 0.875rem;
+    height: 0.875rem;
+    border: 1.5px solid currentColor;
+    border-inline-end-color: transparent;
+    border-radius: 50%;
+    animation: qt-spin 700ms linear infinite;
+  }
+
+  .btn[aria-busy="true"]::before {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    border-color: var(--btn-fg);
+    border-inline-end-color: transparent;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    color: var(--text-3);
+    vertical-align: middle;
+  }
+
+  /* Touch: 44px targets; small buttons keep their look and grow an
+     invisible hit area. */
+  @media (pointer: coarse) {
+    .btn--sm::after {
+      content: "";
+      position: absolute;
+      inset: calc((var(--control-h-sm) - var(--target)) / 2) 0;
+    }
+
+    /* A link on a line of its own, not inside a sentence, grows to 44px
+       too: in a stack, a banner or a caption. */
+    :is(.stack, .banner, figcaption) > a:not(.btn) {
+      display: inline-flex;
+      align-items: center;
+      min-height: var(--target);
+    }
+  }
+
+  .icon {
+    width: 1rem;
+    height: 1rem;
+    flex: none;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .icon--20 {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  /* ── Tooltip: shown on hover after a pause and at once on focus; Escape
+     hides it (system.js). Never the only place a fact lives. */
+  .tip {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .tooltip {
+    position: absolute;
+    bottom: calc(100% + var(--s-2));
+    inset-inline-start: 50%;
+    z-index: 40;
+    display: none;
+    width: max-content;
+    max-width: min(16rem, calc(100vw - 2 * var(--s-4)));
+    padding: var(--s-1) var(--s-2);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-sm);
+    background: var(--raised);
+    color: var(--text);
+    font-size: var(--fs-12);
+    line-height: var(--lh-12);
+    font-weight: 500;
+    box-shadow: var(--shadow-overlay);
+    transform: translateX(calc(-50% * var(--qt-dir)));
+  }
+
+  /* A bridge over the gap, so the pointer can move onto the tooltip
+     without it vanishing (WCAG 1.4.13: hoverable). */
+  .tooltip::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    top: 100%;
+    height: calc(var(--s-2) + 2px);
+  }
+
+  /* On the first or last control of a bar, align to that edge instead. */
+  .tooltip--start {
+    inset-inline-start: 0;
+    transform: none;
+  }
+
+  .tooltip--end {
+    inset-inline-start: auto;
+    inset-inline-end: 0;
+    transform: none;
+  }
+
+  /* Under the trigger, for a bar at the top of the window, where there is
+     no room above. Combines with --start and --end. */
+  .tooltip--below {
+    top: calc(100% + var(--s-2));
+    bottom: auto;
+  }
+
+  .tooltip--below::after {
+    top: auto;
+    bottom: 100%;
+  }
+
+  .tip:hover > .tooltip,
+  .tip:focus-within > .tooltip {
+    display: block;
+    animation: qt-fade var(--t-fast) var(--ease) both;
+  }
+
+  .tip:hover:not(:focus-within) > .tooltip {
+    animation-delay: 500ms;
+  }
+
+  /* Where :has() works, focus by pointer shows nothing; keyboard focus
+     shows the tooltip at once. */
+  @supports selector(:has(*)) {
+    .tip:focus-within:not(:hover):not(:has(:focus-visible)) > .tooltip {
+      display: none;
+    }
+  }
+
+  .tip[data-tip-dismissed] > .tooltip {
+    display: none;
+  }
+
+  /* A trigger that opened a menu or dialog drops its tooltip, which would
+     otherwise sit over the menu. system.js covers engines without :has(). */
+  @supports selector(:has(*)) {
+    .tip:has(> [aria-expanded="true"]) > .tooltip {
+      display: none;
+    }
+  }
+
+  /* ── Forms ── */
+  .field {
+    display: grid;
+    gap: var(--s-2);
+    max-width: var(--w-field);
+  }
+
+  .field--wide {
+    max-width: none;
+  }
+
+  /* A field with its button on one line (a domain and Scan, an email and
+     Send). The field takes the room; when the row is too narrow the button
+     wraps under it and fills the line. No container query needed. */
+  .inline-field {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--s-2);
+  }
+
+  .inline-field > :is(.input, .select-wrap, .select) {
+    flex: 999 1 16rem;
+    width: auto;
+    min-width: 0;
+  }
+
+  .inline-field > .btn {
+    flex: 1 0 auto;
+  }
+
+  .label {
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .label__optional {
+    margin-inline-start: var(--s-1);
+    font-weight: 400;
+    color: var(--text-3);
+  }
+
+  .input,
+  .select,
+  .textarea {
+    display: block;
+    width: 100%;
+    min-height: var(--control-h);
+    padding: var(--s-2) var(--s-3);
+    border: 1px solid var(--control-line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    color: var(--text);
+    /* 16px: iOS zooms the page when a focused field is smaller. */
+    font-family: var(--font-sans);
+    font-size: var(--fs-16);
+    line-height: var(--lh-16);
+    transition: border-color var(--t-fast) var(--ease), background-color var(--t-fast) var(--ease);
+  }
+
+  /* One line high, exactly: a field, a select and a button in a row line
+     up top and bottom. */
+  .input,
+  .select {
+    height: var(--control-h);
+    padding-block: 0;
+  }
+
+  .select:is([multiple], [size]:not([size="1"])) {
+    height: auto;
+    padding-block: var(--s-2);
+  }
+
+  .textarea {
+    min-height: 6rem;
+    resize: vertical;
+  }
+
+  .input::placeholder,
+  .textarea::placeholder {
+    color: var(--text-3);
+    opacity: 1;
+  }
+
+  .input:hover,
+  .select:hover,
+  .textarea:hover {
+    border-color: var(--text-2);
+  }
+
+  .input:focus-visible,
+  .select:focus-visible,
+  .textarea:focus-visible {
+    border-color: var(--accent);
+    outline-offset: 1px;
+  }
+
+  .input[aria-invalid="true"],
+  .select[aria-invalid="true"],
+  .textarea[aria-invalid="true"] {
+    border-color: var(--danger);
+  }
+
+  .input:disabled,
+  .select:disabled,
+  .textarea:disabled {
+    border-color: var(--line-strong);
+    background: var(--qt-light, var(--sunken)) var(--qt-dark, color-mix(in oklab, var(--surface) 60%, var(--bg)));
+    color: var(--text-3);
+    -webkit-text-fill-color: var(--text-3);
+    opacity: 1;
+    cursor: not-allowed;
+  }
+
+  .input[readonly]:not(:disabled),
+  .textarea[readonly]:not(:disabled) {
+    border-style: dashed;
+    border-color: var(--control-line);
+    background: var(--sunken);
+  }
+
+  /* Select: native control, our chevron (drawn with borders: no image). */
+  .select-wrap {
+    position: relative;
+    display: block;
+  }
+
+  .select {
+    appearance: none;
+    padding-inline-end: var(--s-10);
+  }
+
+  /* A select used without its wrapper keeps the native chevron, so it
+     never reads as a text field. */
+  select.select:not(.select-wrap > select) {
+    appearance: auto;
+    padding-inline-end: var(--s-3);
+  }
+
+  .select-wrap::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    inset-inline-end: var(--s-4);
+    width: 0.4rem;
+    height: 0.4rem;
+    border-right: 1.5px solid var(--text-2);
+    border-bottom: 1.5px solid var(--text-2);
+    pointer-events: none;
+    transform: translateY(-70%) rotate(45deg);
+  }
+
+  .select-wrap:has(.select:disabled)::after {
+    border-color: var(--text-3);
+  }
+
+  .hint,
+  .error,
+  .success {
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+  }
+
+  .error,
+  .success {
+    display: flex;
+    gap: var(--s-2);
+    align-items: flex-start;
+  }
+
+  .error {
+    color: var(--danger);
+  }
+
+  .success {
+    color: var(--ok);
+  }
+
+  .error > .icon,
+  .success > .icon {
+    margin-block-start: 0.125rem;
+  }
+
+  /* Checkbox, radio and switch: a 44px row on touch, a 3:1 edge, and
+     ticks drawn with borders (no data: URL, so img-src 'self' is fine). */
+  .check {
+    display: flex;
+    width: fit-content;
+    min-height: var(--s-6);
+    align-items: flex-start;
+    gap: var(--s-3);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  .check > span {
+    padding-block-start: 0.125rem;
+  }
+
+  .check input {
+    flex: none;
+    margin: 0;
+    cursor: inherit;
+  }
+
+  .check input:not(.switch) {
+    appearance: none;
+    display: grid;
+    place-content: center;
+    width: 1.125rem;
+    height: 1.125rem;
+    margin-block-start: 0.125rem;
+    border: 1px solid var(--control-line);
+    border-radius: 4px;
+    background: var(--surface);
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+  }
+
+  .check input:not(.switch)::before {
+    content: "";
+    width: 0.3125rem;
+    height: 0.5625rem;
+    margin-block-start: -0.125rem;
+    border: solid var(--on-accent);
+    border-width: 0 0.125rem 0.125rem 0;
+    transform: rotate(45deg) scale(0);
+    transition: transform var(--t-fast) var(--ease);
+  }
+
+  .check input[type="radio"] {
+    border-radius: 50%;
+  }
+
+  .check input[type="radio"]::before {
+    width: 0.5rem;
+    height: 0.5rem;
+    margin: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--on-accent);
+    transform: scale(0);
+  }
+
+  .check input:not(.switch):hover {
+    border-color: var(--text-2);
+  }
+
+  .check input:not(.switch):checked {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+
+  .check input:not(.switch):checked::before {
+    transform: rotate(45deg) scale(1);
+  }
+
+  .check input[type="radio"]:checked::before {
+    transform: scale(1);
+  }
+
+  .check input[aria-invalid="true"] {
+    border-color: var(--danger);
+  }
+
+  .switch {
+    appearance: none;
+    position: relative;
+    width: 2.25rem;
+    height: 1.25rem;
+    margin-block-start: 0;
+    border: 1px solid transparent;
+    border-radius: var(--r-pill);
+    background: var(--control-line);
+    transition: background-color var(--t-base) var(--ease);
+  }
+
+  .switch::after {
+    content: "";
+    position: absolute;
+    top: 1px;
+    inset-inline-start: 1px;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    background: var(--surface);
+    transition: transform var(--t-base) var(--ease), background-color var(--t-base) var(--ease);
+  }
+
+  .switch:checked {
+    background: var(--accent);
+  }
+
+  .switch:checked::after {
+    background: var(--on-accent);
+    transform: translateX(calc(1rem * var(--qt-dir)));
+  }
+
+  .check:has(input:disabled) {
+    color: var(--text-3);
+    cursor: not-allowed;
+  }
+
+  .check input:disabled {
+    border-color: var(--line-strong);
+    background-color: var(--sunken);
+  }
+
+  .check input:disabled:checked {
+    border-color: var(--control-line);
+    background-color: var(--control-line);
+  }
+
+  .check input.switch:disabled {
+    background-color: var(--line-strong);
+  }
+
+  .check input.switch:disabled:checked {
+    background-color: var(--control-line);
+  }
+
+  @media (pointer: coarse) {
+    .check {
+      min-height: var(--target);
+      align-items: center;
+    }
+
+    .check > span {
+      padding-block-start: 0;
+    }
+
+    .check input:not(.switch) {
+      margin-block-start: 0;
+    }
+  }
+
+  /* A set of checkboxes, radios or switches: a fieldset with a legend, or
+     a div with role="group" and aria-labelledby. */
+  .choices {
+    display: grid;
+    align-content: start;
+    gap: var(--s-2);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+
+  .choices > legend,
+  .choices > .label:first-child {
+    margin-block-end: var(--s-2);
+    padding: 0;
+  }
+
+  /* Segmented control: two to four exclusive options on radio inputs. */
+  .segmented {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin: 0;
+    padding: 2px;
+    border: 1px solid var(--control-line);
+    border-radius: var(--r-md);
+    background: var(--sunken);
+    min-width: 0;
+  }
+
+  .segmented > legend {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .segmented label {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .segmented input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  /* The whole group is --control-h tall: 2px padding, a 1px edge, and
+     options 6px shorter. */
+  .segmented span {
+    display: inline-flex;
+    align-items: center;
+    min-height: calc(var(--control-h) - 6px);
+    padding: 0 var(--s-3);
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    color: var(--text-2);
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    font-weight: 500;
+    white-space: nowrap;
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+
+  .segmented input:hover + span {
+    color: var(--text);
+  }
+
+  .segmented input:checked + span {
+    border-color: var(--control-line);
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .segmented input:focus-visible + span {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  /* Touch: the option keeps its size; its hit area grows to the whole
+     44px height of the group. */
+  @media (pointer: coarse) {
+    .segmented span {
+      min-width: var(--target);
+      justify-content: center;
+    }
+
+    .segmented label::after {
+      content: "";
+      position: absolute;
+      inset: -3px 0;
+    }
+  }
+
+  /* Range: a 4px track in the control colour, an accent thumb. */
+  .range {
+    width: 100%;
+    height: 1.25rem;
+    margin: 0;
+    background: transparent;
+    appearance: none;
+    cursor: pointer;
+  }
+
+  @media (pointer: coarse) {
+    .range {
+      height: var(--target);
+    }
+  }
+
+  .range::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--control-line);
+  }
+
+  .range::-moz-range-track {
+    height: 4px;
+    border-radius: 2px;
+    background: var(--control-line);
+  }
+
+  .range::-webkit-slider-thumb {
+    width: 1rem;
+    height: 1rem;
+    margin-top: calc((4px - 1rem) / 2);
+    border: 2px solid var(--surface);
+    border-radius: 50%;
+    background: var(--accent);
+    appearance: none;
+  }
+
+  .range::-moz-range-thumb {
+    width: 0.75rem;
+    height: 0.75rem;
+    border: 2px solid var(--surface);
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  /* ── Surfaces ── */
+  .card {
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+  }
+
+  .card__body {
+    padding: var(--s-6);
+  }
+
+  .card__head,
+  .card__foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-2) var(--s-4);
+    padding: var(--s-4) var(--s-6);
+  }
+
+  /* 56px with its hairline, so what follows stays on the 4px grid. */
+  .card__head {
+    box-sizing: border-box;
+    min-height: 3.5rem;
+    padding-block: var(--s-2);
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* Rule 3, no box inside a box: a diff, evidence block or code block
+     placed straight in a card (after its head, instead of a body) runs to
+     the card's edges, separated by hairlines only. */
+  .card > :is(.diff, .evidence, .code) {
+    border: 0;
+    border-radius: 0;
+  }
+
+  .card > :is(.diff, .evidence, .code):last-child {
+    border-end-start-radius: calc(var(--r-lg) - 1px);
+    border-end-end-radius: calc(var(--r-lg) - 1px);
+  }
+
+  /* ...and its text lines up with the card head's. */
+  .card > .diff > li,
+  .card > .evidence > :is(.evidence__path, .evidence__fix) {
+    padding-inline: var(--s-6);
+  }
+
+  .card > .evidence .evidence__line {
+    padding-inline: var(--s-6);
+  }
+
+  /* A study card shown inside a card keeps its content, not a second frame. */
+  .card .study-card {
+    max-width: none;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+  }
+
+  .card__foot {
+    border-top: 1px solid var(--line);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    color: var(--text-3);
+  }
+
+  .card__title {
+    min-width: 0;
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+
+  /* ── Status: a shape and a word. Never colour alone, and never the
+     accent. ok = tick, warn = triangle, danger = diamond, info/neutral =
+     ring, plain = dot. Shapes are clip-paths: no images. */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 1.5rem;
+    padding-block: 0.125rem;
+    padding-inline: var(--s-2) 0.625rem;
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+    background: var(--surface);
+    color: var(--text-2);
+    font-family: var(--font-sans);
+    font-size: var(--fs-12);
+    line-height: var(--lh-12);
+    font-weight: 500;
+    /* One line where it fits; it wraps rather than overflow a narrow cell
+       or a page with enlarged text spacing. */
+    min-width: 0;
+    text-align: start;
+  }
+
+  .pill::before,
+  .note::before,
+  .banner::before,
+  .toast::before {
+    content: "";
+    flex: none;
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: 50%;
+    /* Each status class sets --mark; without one it is a plain dot. */
+    background: var(--mark, var(--text-3));
+  }
+
+  .pill--ok,
+  .note--ok,
+  .banner--ok,
+  .toast--ok {
+    --mark: var(--ok);
+  }
+
+  .pill--warn,
+  .note--warn,
+  .banner--warn,
+  .toast--warn {
+    --mark: var(--warn);
+  }
+
+  .pill--danger,
+  .note--danger,
+  .banner--danger,
+  .toast--danger {
+    --mark: var(--danger);
+  }
+
+  :is(.pill--ok, .note--ok, .banner--ok, .toast--ok)::before {
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 0;
+    clip-path: polygon(0% 55%, 16% 39%, 38% 60%, 84% 14%, 100% 30%, 38% 92%);
+  }
+
+  :is(.pill--warn, .note--warn, .banner--warn, .toast--warn)::before {
+    width: 0.625rem;
+    height: 0.5625rem;
+    border-radius: 0;
+    clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+  }
+
+  :is(.pill--danger, .note--danger, .banner--danger, .toast--danger)::before {
+    width: 0.5625rem;
+    height: 0.5625rem;
+    border-radius: 0;
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  }
+
+  /* Info and "in progress": a ring. The accent ring is for product states
+     such as Queued; it never means good or bad. */
+  .pill--info,
+  .pill--accent {
+    --mark: transparent;
+  }
+
+  .pill--info::before,
+  .pill--accent::before {
+    width: 0.5rem;
+    height: 0.5rem;
+    border: 1.5px solid var(--text-2);
+  }
+
+  .pill--accent::before {
+    border-color: var(--accent);
+  }
+
+  /* Running: a half-filled neutral ring. Work in progress is not the
+     accent, which belongs to the one primary action. */
+  .pill--running {
+    --mark: transparent;
+  }
+
+  .pill--running::before {
+    width: 0.5rem;
+    height: 0.5rem;
+    border: 1.5px solid var(--text-2);
+    background: linear-gradient(to bottom, transparent 50%, var(--text-2) 50%);
+  }
+
+  /* Live: a filled accent dot, one slow pulse three times, then it holds.
+     Not the danger red: on this system red means something failed. */
+  .pill--live {
+    --mark: var(--accent);
+  }
+
+  .pill--live::before {
+    animation: qt-pulse 1.6s var(--ease) 3;
+  }
+
+  .count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding-inline: 0.375rem;
+    border-radius: var(--r-pill);
+    background: var(--sunken);
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: var(--fs-12);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .kbd {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.375rem;
+    min-width: 1.375rem;
+    padding-inline: 0.375rem;
+    border: 1px solid var(--line-strong);
+    border-bottom-width: 2px;
+    border-radius: var(--r-sm);
+    background: var(--surface);
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: var(--fs-12);
+    line-height: 1;
+  }
+
+  .avatar {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: var(--sunken);
+    color: var(--text-2);
+    font-size: var(--fs-12);
+    font-weight: 500;
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  /* ── Notes and banners: a shape, a word, a sentence. Info is neutral;
+     warn and danger are tinted so they are not timid. ── */
+  .note {
+    display: flex;
+    gap: var(--s-3);
+    /* A one-line note is 52px: on the 4px grid with its edge. */
+    padding: calc(var(--s-4) - 1px) var(--s-5);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    color: var(--text-2);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  .note::before {
+    margin-block-start: 0.3125rem;
+  }
+
+  /* A note without a status is information: a ring. */
+  .note:not(.note--ok, .note--warn, .note--danger)::before {
+    width: 0.625rem;
+    height: 0.625rem;
+    border: 1.5px solid var(--text-2);
+    background: transparent;
+  }
+
+  .note--ok { border-color: color-mix(in oklab, var(--ok) 30%, var(--surface)); }
+  .note--warn {
+    border-color: color-mix(in oklab, var(--warn) 35%, var(--surface));
+    background: var(--warn-soft);
+  }
+  .note--danger {
+    border-color: color-mix(in oklab, var(--danger) 35%, var(--surface));
+    background: var(--danger-soft);
+  }
+
+  .note--warn,
+  .note--danger {
+    color: var(--text);
+  }
+
+  .note > div > * + * {
+    margin-block-start: var(--s-2);
+  }
+
+  .note strong,
+  .banner strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* A full-width strip under the bar for account-level state. */
+  .banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--s-1) var(--s-3);
+    padding: var(--s-3) var(--gutter);
+    border-bottom: 1px solid var(--line);
+    background: var(--sunken);
+    color: var(--text);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  .banner::before {
+    align-self: center;
+  }
+
+  .banner:not(.banner--ok, .banner--warn, .banner--danger)::before {
+    width: 0.625rem;
+    height: 0.625rem;
+    border: 1.5px solid var(--text-2);
+    background: transparent;
+  }
+
+  .banner--warn { background: var(--warn-soft); }
+  .banner--danger { background: var(--danger-soft); }
+
+  .banner > :last-child:is(a, .btn) {
+    margin-inline-start: auto;
+  }
+
+  /* Plain links in context take the text colour (the underline marks
+     them). :where() keeps this weaker than .btn, so a button-styled link
+     inside a note, a banner, a footer or a table of contents keeps its own
+     colours. */
+  :where(.note, .banner) a:not(.btn) {
+    color: inherit;
+  }
+
+  /* ── Code and commands: a header bar with a label and Copy, so the
+     button never covers the code. ── */
+  .code {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--sunken);
+  }
+
+  .code__bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    min-height: 2.75rem;
+    padding-block: var(--s-1);
+    padding-inline: var(--s-4) var(--s-2);
+    border-bottom: 1px solid var(--line);
+    color: var(--text-2);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+  }
+
+  .code pre {
+    margin: 0;
+    padding: var(--s-4) var(--s-5);
+    overflow-x: auto;
+    background:
+      linear-gradient(to right, var(--sunken) 30%, transparent) left / 2.5rem 100% no-repeat local,
+      linear-gradient(to left, var(--sunken) 30%, transparent) right / 2.5rem 100% no-repeat local,
+      linear-gradient(to right, var(--line-strong), transparent) left / 0.75rem 100% no-repeat scroll,
+      linear-gradient(to left, var(--line-strong), transparent) right / 0.75rem 100% no-repeat scroll,
+      var(--sunken);
+    color: var(--text);
+    font-size: var(--fs-13);
+    line-height: 1.375rem;
+    white-space: pre;
+    tab-size: 2;
+  }
+
+  .code pre:focus-visible {
+    outline-offset: -2px;
+  }
+
+  .code .prompt,
+  .code .comment,
+  .code .output {
+    color: var(--text-3);
+  }
+
+  .code .prompt {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .code .output {
+    color: var(--text-2);
+  }
+
+  /* A value people copy: shown whole, wrapping at any character. */
+  /* --control-h tall on one line, like a field: the small Copy button plus
+     an even gap above and below it. */
+  .copyfield {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s-2);
+    padding-block: calc((var(--control-h) - 2px - var(--control-h-sm)) / 2);
+    padding-inline: var(--s-3) var(--s-1);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-md);
+    background: var(--sunken);
+  }
+
+  .copyfield__value,
+  .value {
+    min-width: 0;
+    font-family: var(--font-mono);
+    overflow-wrap: anywhere;
+    word-break: break-all;
+  }
+
+  .copyfield__value {
+    flex: 1;
+    padding-block: calc((var(--control-h-sm) - var(--lh-14)) / 2);
+    padding-inline-end: var(--s-1);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+    color: var(--text);
+  }
+
+  .copyfield > .btn {
+    flex: none;
+  }
+
+  /* A secret (a private key, an API key): masked until asked for. The
+     product decides whether the value is in the page while masked. */
+  .secret[data-revealed="false"] .secret__value,
+  .secret:not([data-revealed]) .secret__value {
+    display: none;
+  }
+
+  .secret[data-revealed="true"] .secret__mask {
+    display: none;
+  }
+
+  .secret__mask {
+    letter-spacing: 0.12em;
+    color: var(--text-3);
+  }
+
+  /* Truncate one line; the full value must be one click away (Copy, a
+     title and the detail view). */
+  .truncate {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* A console: output that streams. role="log", announcements off; a
+     separate status line says what matters, at most every 10 seconds. */
+  .console {
+    max-height: 24rem;
+    margin: 0;
+    padding: var(--s-4) var(--s-5);
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--sunken);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  /* A CLI's framed banner (box-drawing lines): set solid, so the rows
+     join with no gaps, and never wrapped. */
+  .console__box {
+    display: block;
+    line-height: 1;
+    white-space: pre;
+  }
+
+  .console .dim { color: var(--text-3); }
+  .console .ok { color: var(--ok); }
+  .console .warn { color: var(--warn); }
+  .console .danger { color: var(--danger); }
+
+  /* ── Tables ── */
+  .data-table-wrap {
+    container: table / inline-size;
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background:
+      linear-gradient(to right, var(--surface) 30%, transparent) left / 2.5rem 100% no-repeat local,
+      linear-gradient(to left, var(--surface) 30%, transparent) right / 2.5rem 100% no-repeat local,
+      linear-gradient(to right, var(--line-strong), transparent) left / 0.75rem 100% no-repeat scroll,
+      linear-gradient(to left, var(--line-strong), transparent) right / 0.75rem 100% no-repeat scroll,
+      var(--surface);
+  }
+
+  .data-table-wrap:focus-visible {
+    outline-offset: 2px;
+  }
+
+  .data-table {
+    width: 100%;
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    text-align: start;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .data-table caption {
+    padding: var(--s-4) var(--s-4) var(--s-2);
+    text-align: start;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  /* Rows are 44px (32px compact): --cell-pad above a 20px line, 1px less
+     below it, and a 1px rule. */
+  .data-table th,
+  .data-table td {
+    padding: var(--cell-pad) var(--s-4) calc(var(--cell-pad) - 1px);
+    border-bottom: 1px solid var(--line);
+    text-align: start;
+    vertical-align: middle;
+  }
+
+  .data-table thead th {
+    padding-block: max(var(--s-1), calc(var(--cell-pad) - var(--s-1))) max(3px, calc(var(--cell-pad) - 5px));
+    background: var(--sunken);
+    color: var(--text-2);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .data-table tbody th {
+    font-weight: 500;
+  }
+
+  /* Short ids (CIS-1.4, IAM-12, S3.1) never break, even beside a long ARN;
+     only a .value (an ARN, a hash) wraps, anywhere. */
+  .data-table :is(th, td).mono:not(.value) {
+    white-space: nowrap;
+  }
+
+  .data-table tbody tr:last-child > * {
+    border-bottom: 0;
+  }
+
+  .data-table .end {
+    text-align: end;
+  }
+
+  .data-table .nowrap {
+    white-space: nowrap;
+  }
+
+  .data-table tbody tr {
+    transition: background-color var(--t-fast) var(--ease);
+  }
+
+  @media (hover: hover) {
+    .data-table tbody tr:hover {
+      background: var(--hover);
+    }
+  }
+
+  /* The current row (the one open in a side panel, say): aria-current in a
+     plain table, aria-selected in an interactive grid. */
+  .data-table tr:is([aria-current="true"], [aria-selected="true"]) {
+    background: var(--current);
+  }
+
+  .data-table tr:is([aria-current="true"], [aria-selected="true"]) > :first-child {
+    box-shadow: inset calc(2px * var(--qt-dir)) 0 0 var(--accent);
+  }
+
+  /* A dense table on a normal page: 32px rows. */
+  .data-table--compact {
+    --cell-pad: 0.375rem;
+  }
+
+  /* Sortable header: a button inside the th, aria-sort on the th. */
+  .data-table th > .sort {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-1);
+    margin: calc(-1 * var(--s-1)) calc(-1 * var(--s-2));
+    padding: var(--s-1) var(--s-2);
+    border: 0;
+    border-radius: var(--r-sm);
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .data-table th > .sort:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+
+  .data-table th[aria-sort] > .sort::after {
+    content: "";
+    width: 0.35rem;
+    height: 0.35rem;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-1px) rotate(45deg);
+  }
+
+  .data-table th[aria-sort="ascending"] > .sort::after {
+    transform: translateY(2px) rotate(-135deg);
+  }
+
+  /* Stacked table: on a narrow container each row becomes a block, the
+     first cell its title, the rest label/value pairs from data-label. For
+     tables of up to about five columns; wider numeric tables scroll. */
+  @container table (width < 36rem) {
+    .data-table--stack thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+
+    .data-table--stack,
+    .data-table--stack tbody,
+    .data-table--stack tr,
+    .data-table--stack th,
+    .data-table--stack td {
+      display: block;
+    }
+
+    .data-table--stack caption {
+      display: block;
+    }
+
+    .data-table--stack tr {
+      padding: var(--s-3) var(--s-4);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .data-table--stack tbody tr:last-child {
+      border-bottom: 0;
+    }
+
+    .data-table--stack th,
+    .data-table--stack td {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--s-4);
+      padding: var(--s-1) 0;
+      border: 0;
+      text-align: end;
+    }
+
+    .data-table--stack :is(th, td)[data-label]::before {
+      content: attr(data-label);
+      flex: none;
+      color: var(--text-3);
+      font-weight: 400;
+      text-align: start;
+    }
+
+    .data-table--stack tr > :first-child {
+      display: block;
+      padding-block-end: var(--s-2);
+      text-align: start;
+      font-weight: 500;
+    }
+
+    .data-table--stack tr > :first-child::before {
+      content: none;
+    }
+
+    .data-table--stack .end {
+      text-align: end;
+    }
+
+    .data-table--stack tr:is([aria-current="true"], [aria-selected="true"]) {
+      box-shadow: inset calc(2px * var(--qt-dir)) 0 0 var(--accent);
+    }
+
+    .data-table--stack tr:is([aria-current="true"], [aria-selected="true"]) > :first-child {
+      box-shadow: none;
+    }
+  }
+
+  /* Key and value pairs. */
+  .kv {
+    display: grid;
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  .kv > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-1) var(--s-6);
+    padding-block: var(--s-3);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .kv > div:first-child {
+    border-top: 1px solid var(--line);
+  }
+
+  .kv dt {
+    flex: 0 0 11rem;
+    color: var(--text-2);
+  }
+
+  .kv dd {
+    flex: 1 1 14rem;
+    min-width: 0;
+    color: var(--text);
+  }
+
+  /* ── Tabs: one row, a 2px accent underline on the selected tab; the row
+     scrolls sideways on a phone. Arrow keys move between tabs. ── */
+  .tabs {
+    display: flex;
+    gap: var(--s-1);
+    overflow-x: auto;
+    border-bottom: 1px solid var(--line);
+    scrollbar-width: none;
+  }
+
+  /* Engines without scrollbar-width (Chrome before 121, Safari before 18.2). */
+  .tabs::-webkit-scrollbar,
+  .shell__rail::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-2);
+    min-height: var(--control-h);
+    padding: var(--s-2) var(--s-3);
+    border: 0;
+    border-radius: var(--r-md) var(--r-md) 0 0;
+    background: none;
+    color: var(--text-2);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+    font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .tab:hover {
+    color: var(--text);
+    background: var(--hover);
+  }
+
+  .tab:focus-visible {
+    outline-offset: -2px;
+  }
+
+  .tab[aria-selected="true"],
+  .tab[aria-current="page"] {
+    color: var(--text);
+  }
+
+  .tab[aria-selected="true"]::after,
+  .tab[aria-current="page"]::after {
+    content: "";
+    position: absolute;
+    inset-inline: var(--s-3);
+    bottom: 0;
+    height: 2px;
+    border-radius: 2px 2px 0 0;
+    background: var(--accent);
+  }
+
+  /* The panel under a row of tabs: room between the tabs and the content. */
+  .tab-panel {
+    padding-block-start: var(--s-6);
+  }
+
+  .tab-panel:focus-visible {
+    outline-offset: var(--s-2);
+  }
+
+  /* ── Rail (app navigation) ── */
+  .rail__label {
+    padding: var(--s-3) var(--s-3) var(--s-2);
+    color: var(--text-3);
+    font-size: var(--fs-12);
+    line-height: var(--lh-12);
+    font-weight: 500;
+  }
+
+  .rail__item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-2);
+    min-height: var(--rail-h);
+    padding: 0 var(--s-3);
+    border-radius: var(--r-md);
+    color: var(--text-2);
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    text-decoration: none;
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+
+  .rail__item:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+
+  /* Current: a neutral fill, the text at full strength, and a 2px accent
+     mark, so it is never mistaken for a status tint. */
+  .rail__item[aria-current="page"] {
+    background: var(--current);
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .rail__item[aria-current="page"]::before {
+    content: "";
+    position: absolute;
+    inset-block: var(--s-2);
+    inset-inline-start: 0;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+
+  .rail__foot {
+    margin-block-start: auto;
+    padding-block-start: var(--s-4);
+  }
+
+  /* In the phone strip the current mark moves under the item. */
+  @container shell (width < 60rem) {
+    .rail__item[aria-current="page"] {
+      background: transparent;
+    }
+
+    .rail__item[aria-current="page"]::before {
+      inset: auto var(--s-3) 0;
+      width: auto;
+      height: 2px;
+    }
+  }
+
+  @media (pointer: coarse) {
+    .rail__item,
+    .nav__link {
+      min-height: var(--target);
+    }
+  }
+
+  /* ── Breadcrumbs and pagination ── */
+  .crumbs ol {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-1) var(--s-2);
+    list-style: none;
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    color: var(--text-2);
+  }
+
+  .crumbs li + li::before {
+    content: "/";
+    content: "/" / "";
+    margin-inline-end: var(--s-2);
+    color: var(--text-3);
+  }
+
+  @media (pointer: coarse) {
+    :where(.crumbs) a:not(.btn) {
+      display: inline-flex;
+      align-items: center;
+      min-height: var(--target);
+    }
+
+    .data-table th > .sort {
+      min-height: var(--target);
+    }
+  }
+
+  :where(.crumbs) a:not(.btn) {
+    color: var(--text-2);
+    text-decoration: none;
+  }
+
+  :where(.crumbs) a:not(.btn):hover {
+    color: var(--text);
+    text-decoration: underline;
+  }
+
+  .crumbs [aria-current="page"] {
+    color: var(--text);
+  }
+
+  /* On a phone only the parent shows, as a way back. */
+  @media (max-width: 29.99rem) {
+    .crumbs li:not(:nth-last-child(2)) {
+      display: none;
+    }
+
+    .crumbs li:nth-last-child(2)::before {
+      content: "\2190";
+      content: "\2190" / "";
+      margin-inline-end: var(--s-2);
+      color: var(--text-3);
+    }
+
+    :where([dir="rtl"]) .crumbs li:nth-last-child(2)::before {
+      content: "\2192";
+      content: "\2192" / "";
+    }
+  }
+
+  .pager {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-4);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    color: var(--text-2);
+  }
+
+  /* ── Tool chrome: a frame with a toolbar on top, an optional side panel
+     and the work area. For PDFree's editor; any dense tool uses the same
+     parts. The bar is --nav-h tall (60px, 48px compact) with its hairline;
+     groups are separated by a hairline; the one primary sits at the end.
+
+       <div class="tool" data-density="compact">
+         <div class="toolbar" role="toolbar" aria-label="Document tools">
+           <div class="toolbar__group">…icon buttons, aria-pressed for modes…</div>
+           <div class="toolbar__group">…</div>
+           <button class="btn toolbar__panel-toggle" popovertarget="inspector">Inspector</button>
+           <button class="btn btn--primary toolbar__end">Download</button>
+         </div>
+         <div class="tool__body">
+           <aside class="panel" id="inspector" popover aria-labelledby="…">
+             <div class="panel__head"><h2 class="panel__title">…</h2>
+               <button class="btn btn--ghost btn--sm panel__close" popovertarget="inspector" popovertargetaction="hide">Close</button></div>
+             …
+           </aside>
+           <div class="tool__main">…</div>
+         </div>
+       </div>
+
+     The panel is a 15rem column beside the work (before it in the markup:
+     inline start; add .side-panel--end and put it after: inline end). Under
+     48rem it becomes a bottom sheet over a scrim, opened by the toggle
+     (shown only there), closed by Close, Escape or a tap outside, all
+     native popover behaviour. Without the popover API (Safari 16) the
+     panel stays in the flow above the work on phones. ── */
+  .tool {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--bg);
+  }
+
+  .toolbar {
+    box-sizing: border-box;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-2);
+    min-height: var(--nav-h);
+    /* The rule below takes 1px of the bottom padding: 32px controls make a
+       48px compact bar, as the navigation bar is. */
+    padding: var(--s-2) var(--s-3) calc(var(--s-2) - 1px);
+    border-bottom: 1px solid var(--line);
+    background: var(--surface);
+  }
+
+  .tool > .toolbar:first-child {
+    border-start-start-radius: calc(var(--r-lg) - 1px);
+    border-start-end-radius: calc(var(--r-lg) - 1px);
+  }
+
+  .toolbar__group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-1);
+  }
+
+  .toolbar__group + .toolbar__group {
+    padding-inline-start: var(--s-2);
+    border-inline-start: 1px solid var(--line);
+  }
+
+  .toolbar__end {
+    margin-inline-start: auto;
+  }
+
+  .toolbar__panel-toggle {
+    display: none;
+  }
+
+  .tool__body {
+    display: flex;
+    min-height: 0;
+  }
+
+  .tool__main {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: var(--s-4);
+  }
+
+  /* The tool's frame is the box: a table in the work area draws no second
+     one inside it. */
+  .tool__main > .data-table-wrap {
+    border: 0;
+    border-radius: 0;
+  }
+
+  .side-panel,
+  .side-panel[popover] {
+    position: static;
+    display: block;
+    inset: auto;
+    flex: 0 0 15rem;
+    width: 15rem;
+    max-width: none;
+    height: auto;
+    margin: 0;
+    padding: var(--s-4);
+    overflow: visible;
+    border: 0;
+    border-inline-end: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--text);
+  }
+
+  .side-panel--end,
+  .side-panel--end[popover] {
+    border-inline-end: 0;
+    border-inline-start: 1px solid var(--line);
+  }
+
+  .tool > .tool__body:last-child > .side-panel:first-child {
+    border-end-start-radius: calc(var(--r-lg) - 1px);
+  }
+
+  .side-panel__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-2);
+    min-height: var(--control-h);
+    margin-block-end: var(--s-3);
+  }
+
+  .side-panel__title {
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+
+  .side-panel__close {
+    display: none;
+  }
+
+  @media (max-width: 47.99rem) {
+    .tool__body {
+      flex-direction: column;
+    }
+
+    .side-panel,
+    .side-panel[popover] {
+      flex: none;
+      width: auto;
+      border-inline: 0;
+      border-bottom: 1px solid var(--line);
+    }
+  }
+
+  /* Phones with the popover API: the panel is a bottom sheet. Invalid
+     selectors drop a whole rule, so this sits under @supports. */
+  @supports selector(:popover-open) {
+    @media (max-width: 47.99rem) {
+      .toolbar__panel-toggle {
+        display: inline-flex;
+      }
+
+      /* Closed until opened (the UA's own hiding rule loses to the column
+         rule above). */
+      .side-panel[popover] {
+        display: none;
+      }
+
+      .side-panel[popover]:popover-open {
+        display: block;
+        position: fixed;
+        inset: auto 0 0;
+        width: 100%;
+        max-height: min(75dvh, 40rem);
+        overflow: auto;
+        padding: var(--s-4) var(--s-4) max(var(--s-6), env(safe-area-inset-bottom));
+        border: 1px solid var(--line);
+        border-bottom: 0;
+        border-radius: var(--r-xl) var(--r-xl) 0 0;
+        background: var(--raised);
+        box-shadow: var(--shadow-overlay);
+        overscroll-behavior: contain;
+      }
+
+      .side-panel[popover]:popover-open::backdrop {
+        background: rgb(0 0 0 / 0.45);
+      }
+
+      .side-panel[popover] .side-panel__close {
+        display: inline-flex;
+      }
+    }
+  }
+
+  /* ── Menu: a popover list of actions (native popover attribute, opened
+     by a button with popovertarget; no script needed to open or close).
+     system.js places it under its button and adds arrow keys. ── */
+  .menu {
+    position: fixed;
+    inset: auto;
+    margin: 0;
+    min-width: 12rem;
+    max-width: min(20rem, calc(100vw - 2 * var(--s-4)));
+    padding: var(--s-1);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--raised);
+    color: var(--text);
+    box-shadow: var(--shadow-overlay);
+  }
+
+  .menu {
+    display: none;
+  }
+
+  .menu:popover-open {
+    display: block;
+  }
+
+  /* Engines without the popover API: system.js sets data-open. */
+  .menu[data-open] {
+    display: block;
+  }
+
+  /* With system.js running, an open menu stays invisible until it has been
+     placed under its button, so it never paints a frame at the corner. */
+  [data-qt-js] .menu:popover-open:not([data-placed]) {
+    visibility: hidden;
+  }
+
+  .menu__item {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: var(--s-2);
+    min-height: var(--control-h-sm);
+    padding: var(--s-1) var(--s-3);
+    border: 0;
+    border-radius: var(--r-sm);
+    background: none;
+    color: var(--text);
+    font-size: var(--fs-ui);
+    line-height: var(--lh-ui);
+    text-align: start;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .menu__item:hover,
+  .menu__item:focus-visible {
+    background: var(--hover);
+    color: var(--text);
+  }
+
+  .menu__item:focus-visible {
+    outline-offset: -2px;
+  }
+
+  .menu__item--danger {
+    color: var(--danger);
+  }
+
+  .menu hr {
+    margin-block: var(--s-1);
+  }
+
+  @media (pointer: coarse) {
+    .menu__item {
+      min-height: var(--target);
+    }
+  }
+
+  /* ── Dialog: native <dialog> opened with showModal(). ── */
+  .dialog {
+    /* margin: auto centres it, whatever layout it was written inside. */
+    margin: auto;
+    width: min(28rem, calc(100vw - 2 * var(--gutter)));
+    max-height: calc(100dvh - 2 * var(--gutter));
+    padding: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--r-xl);
+    background: var(--raised);
+    color: var(--text);
+    box-shadow: var(--shadow-overlay);
+  }
+
+  .dialog[open] {
+    display: flex;
+    flex-direction: column;
+    animation: qt-rise var(--t-slow) var(--ease);
+  }
+
+  /* Older engines do not let ::backdrop inherit custom properties. */
+  .dialog::backdrop {
+    background: rgb(0 0 0 / 0.45);
+    background: var(--scrim, rgb(0 0 0 / 0.45));
+  }
+
+  .dialog__body {
+    display: grid;
+    gap: var(--s-2);
+    padding: var(--s-6);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .dialog__title {
+    font-size: var(--fs-18);
+    line-height: var(--lh-18);
+  }
+
+  .dialog__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--s-2);
+    margin: 0;
+    padding: var(--s-4) var(--s-6);
+    border-top: 1px solid var(--line);
+  }
+
+  /* ── Toast: confirms an action just taken ("Copied", "Saved"). Never an
+     error. A region at the bottom holds at most three; each stays five
+     seconds and pauses while hovered or focused (system.js). ── */
+  .toasts {
+    position: fixed;
+    inset-inline: 0;
+    bottom: max(var(--s-4), env(safe-area-inset-bottom));
+    z-index: 60;
+    display: grid;
+    justify-items: center;
+    gap: var(--s-2);
+    padding-inline: var(--s-4);
+    pointer-events: none;
+  }
+
+  .toast {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    width: fit-content;
+    max-width: min(26rem, 100%);
+    padding: var(--s-3) var(--s-4);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-lg);
+    background: var(--raised);
+    color: var(--text);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+    box-shadow: var(--shadow-overlay);
+    pointer-events: auto;
+    animation: qt-rise var(--t-slow) var(--ease);
+  }
+
+  .toast[data-leaving] {
+    opacity: 0;
+    transition: opacity var(--t-base) var(--ease);
+  }
+
+  /* ── Empty, loading, progress ── */
+  .empty {
+    display: grid;
+    justify-items: center;
+    gap: var(--s-3);
+    padding: var(--s-12) var(--s-6);
+    text-align: center;
+  }
+
+  .empty__title {
+    font-size: var(--fs-16);
+    line-height: var(--lh-16);
+    font-weight: 600;
+  }
+
+  .empty__text {
+    max-width: 24rem;
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+    color: var(--text-2);
+  }
+
+  /* Skeletons are static: the real layout's shapes in the line colour. */
+  .skeleton {
+    display: block;
+    height: 0.75rem;
+    border-radius: var(--r-sm);
+    background: var(--line);
+  }
+
+  .skeleton--title {
+    width: 40%;
+    height: 1rem;
+  }
+
+  .skeleton--short {
+    width: 65%;
+  }
+
+  /* Progress, always with the value or the wait in words beside it.
+     Determinate: <progress class="progress" value="6" max="15">, the
+     native element, so the value needs no script and is announced as it
+     is. Indeterminate (no honest fraction): a div with role="progressbar",
+     no value, and a sliding bar. */
+  .progress {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 0.375rem;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--r-pill);
+    background: var(--line-strong);
+    color: var(--accent);
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  progress.progress::-webkit-progress-bar {
+    background: var(--line-strong);
+  }
+
+  progress.progress::-webkit-progress-value {
+    border-radius: var(--r-pill);
+    background: var(--accent);
+  }
+
+  progress.progress::-moz-progress-bar {
+    border-radius: var(--r-pill);
+    background: var(--accent);
+  }
+
+  .progress--indeterminate .progress__bar {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 30%;
+    border-radius: inherit;
+    background: var(--accent);
+    animation: qt-slide 1.6s var(--ease) infinite;
+  }
+
+  /* ── Drop zone ── */
+  .dropzone {
+    display: grid;
+    justify-items: center;
+    gap: var(--s-2);
+    padding: var(--s-10) var(--s-6);
+    border: 1px dashed var(--control-line);
+    border-radius: var(--r-lg);
+    background: var(--sunken);
+    color: var(--text-2);
+    text-align: center;
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  /* The file input inside is visually hidden; the zone carries its ring,
+     in the same dialect as every other control. Every engine on the floor
+     shows it on focus; where :has() works, a mouse click does not. */
+  .dropzone:focus-within {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  @supports selector(:has(*)) {
+    .dropzone:focus-within:not(:has(:focus-visible)) {
+      outline: none;
+    }
+  }
+
+  .dropzone:hover,
+  .dropzone[data-dragover] {
+    border-color: var(--accent);
+    border-style: solid;
+  }
+
+  .dropzone[data-dragover] {
+    background: var(--accent-soft);
+  }
+
+  /* ── Severity: five levels, carried by a word and a four-step meter;
+     colour only supports. Critical 4, High 3, Medium 2, Low 1, Info 0. ── */
+  .sev {
+    --sev: var(--line-strong);
+    --s1: var(--line-strong);
+    --s2: var(--line-strong);
+    --s3: var(--line-strong);
+    --s4: var(--line-strong);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    color: var(--text);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    font-weight: 500;
+    min-width: 0;
+  }
+
+  .sev::before {
+    content: "";
+    flex: none;
+    width: 22px;
+    height: 10px;
+    background: linear-gradient(
+      to right,
+      var(--s1) 0 4px,
+      transparent 4px 6px,
+      var(--s2) 6px 10px,
+      transparent 10px 12px,
+      var(--s3) 12px 16px,
+      transparent 16px 18px,
+      var(--s4) 18px 22px
+    );
+  }
+
+  /* The meter fills from the reading start. */
+  .sev::before {
+    transform: scaleX(var(--qt-dir));
+  }
+
+  .sev--critical { --s1: var(--danger); --s2: var(--danger); --s3: var(--danger); --s4: var(--danger); }
+  .sev--high { --s1: var(--danger); --s2: var(--danger); --s3: var(--danger); }
+  .sev--medium { --s1: var(--warn); --s2: var(--warn); }
+  .sev--low { --s1: var(--text-2); }
+  .sev--info { color: var(--text-2); }
+
+  /* Critical is the one level allowed a tint, so it is found at a glance. */
+  .sev--critical {
+    margin: -0.125rem -0.375rem;
+    padding: 0.125rem 0.375rem;
+    border-radius: var(--r-sm);
+    background: var(--danger-soft);
+  }
+
+  /* Score and grade: the number, its range, the grade in a neutral square,
+     and one sentence saying which direction is worse. Never green for
+     "secure". */
+  .score {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+  }
+
+  .grade {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 3rem;
+    height: 3rem;
+    border: 1px solid var(--control-line);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    font-family: var(--font-mono);
+    font-size: var(--fs-20);
+    line-height: 1;
+    font-weight: 600;
+  }
+
+  .score__value {
+    font-size: var(--fs-24);
+    line-height: var(--lh-24);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .score__value small {
+    margin-inline-start: 0.125rem;
+    color: var(--text-3);
+    font-size: var(--fs-14);
+    font-weight: 400;
+  }
+
+  /* ── Marketing pieces ── */
+
+  /* Hero artifact: a true sample of the product's output, labelled. */
+  .findings {
+    list-style: none;
+  }
+
+  .findings > li {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    align-items: baseline;
+    gap: 0.125rem var(--s-3);
+    padding: var(--s-3) var(--s-6);
+    border-bottom: 1px solid var(--line);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  .findings > li > :first-child {
+    grid-row: span 2;
+  }
+
+  /* The finding shown beside the list: the neutral current fill and a 2px
+     accent bar, as a current row anywhere. */
+  .findings > [aria-current="true"] {
+    background: var(--current);
+    box-shadow: inset calc(2px * var(--qt-dir)) 0 0 var(--accent);
+  }
+
+  .findings .value {
+    color: var(--text-3);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+  }
+
+  /* Steps: a numbered list with hairlines, in one row from 48rem. */
+  .steps {
+    display: grid;
+    list-style: none;
+    counter-reset: step;
+  }
+
+  .steps > li {
+    counter-increment: step;
+    padding-block: var(--s-6);
+    padding-inline-end: var(--s-6);
+    border-top: 1px solid var(--line);
+  }
+
+  .steps > li::before {
+    content: counter(step, decimal-leading-zero);
+    display: block;
+    margin-block-end: var(--s-3);
+    color: var(--accent-text);
+    font-family: var(--font-mono);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    font-weight: 500;
+  }
+
+  /* The same row without numbers, for things that are not a sequence
+     (what a scan covers, what is included). */
+  .steps--plain > li::before {
+    content: none;
+  }
+
+  .steps :is(h3, h4) {
+    margin-block-end: var(--s-2);
+    font-size: var(--fs-16);
+    line-height: var(--lh-16);
+  }
+
+  .steps p {
+    color: var(--text-2);
+  }
+
+  @media (min-width: 48rem) {
+    .steps:not(.steps--stacked) {
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(0, 1fr);
+    }
+  }
+
+  /* Always one column, number beside the text: inside cards and panels. */
+  .steps--stacked > li {
+    display: grid;
+    grid-template-columns: 1.75rem minmax(0, 1fr);
+    padding-block: var(--s-3);
+    padding-inline-end: 0;
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  .steps--stacked > li::before {
+    margin: 0;
+  }
+
+  .steps--stacked > li:first-child {
+    border-top: 0;
+    padding-block-start: 0;
+  }
+
+  /* Plans: one divided table. One row from 60rem, one column below, so a
+     plan is never orphaned and no divider is doubled. */
+  .plans {
+    display: grid;
+    gap: 1px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--r-xl);
+    background: var(--line);
+  }
+
+  @media (min-width: 60rem) {
+    .plans {
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(0, 1fr);
+    }
+  }
+
+  .plan {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-5);
+    padding: var(--s-8) var(--s-6);
+    background: var(--surface);
+  }
+
+  /* Recommended: a thin accent rule and a word, never size. */
+  .plan--featured {
+    background: var(--featured);
+  }
+
+  .plan--featured::before {
+    content: "";
+    position: absolute;
+    inset-inline: var(--s-6);
+    top: 0;
+    height: 2px;
+    border-radius: 0 0 2px 2px;
+    background: var(--accent);
+  }
+
+  .plan__name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-2);
+    min-height: 1.5rem;
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+    font-weight: 500;
+    color: var(--text-2);
+  }
+
+  .plan__price {
+    font-size: var(--fs-30);
+    line-height: var(--lh-30);
+    font-weight: 600;
+    letter-spacing: var(--tracking-display);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .plan__price small {
+    margin-inline-start: var(--s-1);
+    color: var(--text-2);
+    font-size: var(--fs-14);
+    font-weight: 400;
+    letter-spacing: 0;
+  }
+
+  /* Always in the markup, empty on a plan with no second price. Plans side
+     by side keep the empty slot's row (below), so their descriptions and
+     lists start on one line; a plan on its own drops it, or a stacked card
+     would show a blank band under its price. */
+  .plan__terms {
+    color: var(--text-2);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+  }
+
+  .plan__desc {
+    color: var(--text-2);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  .plan > :is(.plan__terms, .plan__desc):empty {
+    display: none;
+  }
+
+  /* Every plan has the same six slots (name, price, billing line,
+     description, list, action), so from 60rem their rows line up across
+     the plans; an empty slot keeps its row. */
+  @media (min-width: 60rem) {
+    @supports (grid-template-rows: subgrid) {
+      .plans {
+        grid-template-rows: repeat(6, auto);
+      }
+
+      .plans > .plan {
+        display: grid;
+        grid-row: span 6;
+        grid-template-rows: subgrid;
+        row-gap: var(--s-4);
+      }
+
+      .plans > .plan > :is(.plan__terms, .plan__desc):empty {
+        display: block;
+      }
+    }
+  }
+
+  /* Monthly or yearly: one segmented choice (.plans__billing) above the
+     plans, inside a .pricing wrapper, read by CSS (:has). Where :has() is missing the choice is not drawn and each plan
+     shows its monthly price with the yearly one beside it. */
+  .plans__billing {
+    display: none;
+  }
+
+  [data-billing="yearly"] {
+    display: none;
+  }
+
+  @supports selector(:has(*)) {
+    .plans__billing {
+      display: flex;
+    }
+
+    .pricing:has(.plans__billing [value="yearly"]:checked) [data-billing="monthly"] {
+      display: none;
+    }
+
+    .pricing:has(.plans__billing [value="yearly"]:checked) [data-billing="yearly"] {
+      display: inline;
+    }
+  }
+
+  /* A promotion code, behind a link under the plans. */
+  .plans__code > summary {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--control-h-sm);
+    color: var(--text-2);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+    text-decoration: underline;
+    text-decoration-color: var(--line-strong);
+    text-underline-offset: 0.2em;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .plans__code > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .plans__code > summary:hover {
+    color: var(--text);
+  }
+
+  .plans__code[open] > summary {
+    margin-block-end: var(--s-3);
+  }
+
+  @media (pointer: coarse) {
+    .plans__code > summary {
+      min-height: var(--target);
+    }
+  }
+
+  .plan__list {
+    display: grid;
+    gap: var(--s-2);
+    list-style: none;
+    color: var(--text-2);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  .plan__list li {
+    display: flex;
+    gap: var(--s-3);
+  }
+
+  .plan__list li::before {
+    content: "";
+    flex: none;
+    width: 0.3125rem;
+    height: 0.5625rem;
+    margin-block-start: 0.25rem;
+    margin-inline-start: 0.25rem;
+    border: solid var(--accent-text);
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+  }
+
+  .plan__actions {
+    display: grid;
+    gap: var(--s-2);
+    margin-block-start: auto;
+  }
+
+  /* Questions: native disclosure, hairlines between. */
+  .faq {
+    border-top: 1px solid var(--line);
+  }
+
+  .faq details {
+    border-bottom: 1px solid var(--line);
+  }
+
+  .faq summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-4);
+    margin-inline: calc(-1 * var(--s-3));
+    padding: var(--s-5) var(--s-3);
+    border-radius: var(--r-md);
+    font-weight: 500;
+    cursor: pointer;
+    list-style: none;
+    transition: color var(--t-fast) var(--ease);
+  }
+
+  .faq summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .faq summary:hover {
+    color: var(--accent-text);
+  }
+
+  .faq summary:focus-visible {
+    outline-offset: -2px;
+  }
+
+  .faq summary::after {
+    content: "";
+    flex: none;
+    width: 0.5rem;
+    height: 0.5rem;
+    margin-inline-end: var(--s-1);
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    color: var(--text-3);
+    transform: translateY(-2px) rotate(45deg);
+    transition: transform var(--t-base) var(--ease);
+  }
+
+  .faq details[open] summary::after {
+    transform: translateY(2px) rotate(-135deg);
+  }
+
+  .faq details > :not(summary) {
+    max-width: var(--w-prose);
+    padding-block-end: var(--s-5);
+    color: var(--text-2);
+  }
+
+  .footer {
+    padding-block: var(--s-10);
+    border-top: 1px solid var(--line);
+    color: var(--text-3);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  .footer__links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-1) var(--s-5);
+    list-style: none;
+  }
+
+  :where(.footer) a:not(.btn) {
+    color: var(--text-2);
+    text-decoration: none;
+  }
+
+  :where(.footer) a:not(.btn):hover {
+    color: var(--text);
+    text-decoration: underline;
+  }
+
+  @media (pointer: coarse) {
+    :where(.footer) a:not(.btn) {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: var(--target);
+      min-height: var(--target);
+    }
+  }
+
+  /* ── Stats: hairline dividers drawn by each cell's end and bottom edge,
+     clipped by the frame, so they stay right however the grid wraps. One
+     row when there is room; two columns (the odd last one spanning) below
+     40rem of container; one column below 18rem. ── */
+  .stats {
+    container: stats / inline-size;
+    width: 100%;
+  }
+
+  .stats__grid {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column-reverse;
+    justify-content: flex-end;
+    gap: var(--s-1);
+    margin-inline-end: -1px;
+    margin-block-end: -1px;
+    padding: var(--s-4) var(--s-5);
+    border-inline-end: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .stat__value {
+    font-size: var(--fs-24);
+    line-height: var(--lh-24);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  /* A stat figure inside an app never outranks the page title, which is
+     20px on phones. */
+  @media (max-width: 47.99rem) {
+    .shell .stat__value {
+      font-size: var(--fs-20);
+      line-height: var(--lh-20);
+    }
+  }
+
+  .stat__label {
+    color: var(--text-2);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+  }
+
+  @container stats (width < 40rem) {
+    .stats__grid {
+      grid-auto-flow: row;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .stat:last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @container stats (width < 18rem) {
+    .stats__grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  /* ── Product signatures. Each product has one piece of interface that is
+     only its own. They are built here, on the same tokens, so they keep the
+     system's type, colour roles, focus and forced-colour behaviour. A
+     product uses its own and no other. ── */
+
+  /* Debate: the balance. The crowd's split between the two sides, drawn as
+     one bar that tips. --share is side A's fraction (0 to 1), set from
+     script with el.style.setProperty("--share", 0.62) (CSSOM, so a strict
+     style-src needs no 'unsafe-inline'). The names and percentages are
+     text; the bar only repeats them. */
+  .balance {
+    --share: 0.5;
+    display: grid;
+    gap: var(--s-2);
+  }
+
+  .balance__labels {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--s-1) var(--s-4);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  .balance__side {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .balance__side::before {
+    content: "";
+    flex: none;
+    width: 0.625rem;
+    height: 0.625rem;
+    border-radius: 2px;
+    background: var(--side-a);
+  }
+
+  /* Side B's swatch is a ring as well as a colour, so the two sides differ
+     in shape. */
+  .balance__side--b::before {
+    border: 2px solid var(--side-b);
+    background: transparent;
+  }
+
+  .balance__side b {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .balance__bar {
+    position: relative;
+    height: 0.5rem;
+    overflow: hidden;
+    border-radius: var(--r-pill);
+    background: var(--side-b);
+  }
+
+  .balance__fill {
+    position: absolute;
+    inset: 0;
+    border-inline-end: 2px solid var(--surface);
+    background: var(--side-a);
+    /* Grows from the reading start; a transform, so a moving vote count
+       never reflows the page. */
+    transform-origin: calc(50% - 50% * var(--qt-dir)) 50%;
+    transform: scaleX(var(--share));
+    transition: transform var(--t-slow) var(--ease);
+  }
+
+  /* Bait: the tape. A call as it happens: the time on the left in mono,
+     what was said or done on the right, the moments that matter marked.
+     data-state is "live", "ended" or "empty". */
+  .tape {
+    display: grid;
+    gap: var(--s-3);
+  }
+
+  .tape__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-2) var(--s-4);
+  }
+
+  .tape__clock {
+    font-family: var(--font-mono);
+    font-size: var(--fs-20);
+    line-height: var(--lh-20);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tape__events {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    column-gap: var(--s-4);
+    list-style: none;
+  }
+
+  .tape__events > li {
+    display: contents;
+  }
+
+  .tape__events time {
+    padding-block: var(--s-1);
+    color: var(--text-3);
+    font-family: var(--font-mono);
+    font-size: var(--fs-13);
+    line-height: var(--lh-14);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tape__event {
+    position: relative;
+    padding-block: var(--s-1);
+    padding-inline-start: var(--s-5);
+    border-inline-start: 1px solid var(--line-strong);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  .tape__event::before {
+    content: "";
+    position: absolute;
+    top: calc(var(--s-1) + 0.4375rem);
+    inset-inline-start: -0.25rem;
+    width: 0.4375rem;
+    height: 0.4375rem;
+    border-radius: 50%;
+    background: var(--line-strong);
+  }
+
+  /* A moment that matters: a diamond in the accent and the words at full
+     weight. */
+  .tape__event--mark {
+    font-weight: 500;
+  }
+
+  .tape__event--mark::before {
+    top: calc(var(--s-1) + 0.375rem);
+    inset-inline-start: -0.3125rem;
+    width: 0.5625rem;
+    height: 0.5625rem;
+    border-radius: 0;
+    background: var(--accent);
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  }
+
+  .tape[data-state="live"] .tape__events > li:last-child .tape__event::before {
+    box-shadow: 0 0 0 3px var(--accent-soft);
+    background: var(--accent);
+  }
+
+  .tape[data-state="ended"] .tape__clock {
+    color: var(--text-2);
+  }
+
+  .tape__empty {
+    padding: var(--s-6) var(--s-4);
+    border: 1px dashed var(--line-strong);
+    border-radius: var(--r-md);
+    color: var(--text-2);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+    text-align: center;
+  }
+
+  /* Outpost: the diff. What changed on your attack surface since the last
+     scan, read like a code diff: + new, − gone, in a 2ch gutter. The words
+     "New:" and "Gone:" are in the markup for screen readers. */
+  .diff {
+    display: grid;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    list-style: none;
+    font-family: var(--font-mono);
+    font-size: var(--fs-13);
+    line-height: var(--lh-14);
+  }
+
+  /* The host and the note share a line while they fit; when they do not,
+     the note wraps under the host (to the end side), never the host. A
+     host wider than the whole row ends in an ellipsis. */
+  .diff > li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 var(--s-3);
+    /* The rule takes 1px of the bottom padding: a row is 36px. */
+    padding: var(--s-2) var(--s-4) calc(var(--s-2) - 1px);
+    padding-inline-start: calc(var(--s-4) + 2ch + var(--s-3));
+    border-bottom: 1px solid var(--line);
+  }
+
+  .diff > li:last-child {
+    padding-bottom: var(--s-2);
+    border-bottom: 0;
+  }
+
+  .diff__mark {
+    flex: none;
+    width: 2ch;
+    margin-inline-start: calc(-1 * (2ch + var(--s-3)));
+    font-weight: 600;
+    text-align: center;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .diff__note {
+    flex: 0 1 auto;
+    margin-inline-start: auto;
+    color: var(--text-3);
+    font-family: var(--font-sans);
+  }
+
+  .diff__add .diff__mark {
+    color: var(--accent-text);
+  }
+
+  .diff__add .diff__what {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .diff__gone .diff__mark,
+  .diff__gone .diff__what {
+    color: var(--text-3);
+  }
+
+  /* Another kind of change (a certificate about to expire, a takeover
+     candidate): a ! in the warn colour, and the product's own words for it
+     in the note. */
+  .diff__flag .diff__mark {
+    color: var(--warn);
+  }
+
+  .diff__flag .diff__what {
+    color: var(--text);
+  }
+
+  .diff__gone .diff__what {
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+  }
+
+  .diff__what {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Watchpost: the watch. A device's latest grade beside its scan history
+     (the dashboard's /devices/<id>/history), oldest first: one bar per
+     scan, its height the risk score's grade (A+ shortest, F tallest; lower
+     is better), and a scan whose grade got worse than the one before it
+     drawn hollow in the danger colour (shape as well as colour). The strip
+     is aria-hidden: the visible caption says the same in words. */
+  .watch {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-3) var(--s-4);
+  }
+
+  .watch__body {
+    display: grid;
+    flex: 1 1 12rem;
+    gap: var(--s-1);
+    min-width: 0;
+  }
+
+  /* Six heights, 4px apart, on a 1px baseline; a scan that got worse is a
+     solid danger bar with a pointed top, so its shape says it too. */
+  .watch__strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 3px;
+    min-height: 1.5rem;
+    border-bottom: 1px solid var(--line-strong);
+  }
+
+  .watch__tick {
+    flex: none;
+    width: 0.5rem;
+    height: 1.5rem;
+    border-radius: 1px 1px 0 0;
+    background: var(--text-3);
+  }
+
+  .watch__tick[data-grade="A+"] { height: 0.25rem; }
+  .watch__tick[data-grade="A"] { height: 0.5rem; }
+  .watch__tick[data-grade="B"] { height: 0.75rem; }
+  .watch__tick[data-grade="C"] { height: 1rem; }
+  .watch__tick[data-grade="D"] { height: 1.25rem; }
+  .watch__tick[data-grade="F"] { height: 1.5rem; }
+
+  .watch__tick--worse {
+    border-radius: 0;
+    background: var(--danger);
+    clip-path: polygon(0 3px, 50% 0, 100% 3px, 100% 100%, 0 100%);
+  }
+
+  .watch__caption {
+    color: var(--text-2);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+  }
+
+  .grade--sm {
+    width: 2rem;
+    height: 2rem;
+    border-radius: var(--r-sm);
+    font-size: var(--fs-16);
+  }
+
+  /* Cloud Scanner: the evidence. The exact lines a finding points at, with
+     their file and line numbers, the hit lines marked by a 2px accent rule
+     and the word "Finding" for screen readers, then the command that fixes
+     it. Line numbers are their own spans and are never copied. */
+  .evidence {
+    overflow: hidden;
+    margin: 0;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--sunken);
+  }
+
+  .evidence__path {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-1) var(--s-2);
+    padding: var(--s-2) var(--s-4);
+    border-bottom: 1px solid var(--line);
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    overflow-wrap: anywhere;
+  }
+
+  .evidence__code {
+    padding-block: var(--s-2);
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+  }
+
+  .evidence__code:focus-visible {
+    outline-offset: -2px;
+  }
+
+  /* A finding's lines wrap at any character, so the block never scrolls
+     sideways in a card; numbered source lines (with __n) keep their
+     indentation because wrapping keeps spaces. */
+  .evidence__line {
+    display: block;
+    padding-inline: var(--s-2) var(--s-4);
+    color: var(--text-2);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .evidence__n {
+    display: inline-block;
+    width: 4ch;
+    margin-inline-end: var(--s-3);
+    color: var(--text-3);
+    text-align: end;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .evidence__line--hit {
+    background: var(--hover);
+    box-shadow: inset calc(2px * var(--qt-dir)) 0 0 var(--accent);
+    color: var(--text);
+  }
+
+  .evidence__line--hit .evidence__n {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* The finding's CLI fix, its Copy button at the end of the first line
+     (or under it when there is no room). It wraps at spaces, and after the
+     commas where the markup puts <wbr>; a single token longer than the
+     whole line is the only thing that may break inside a word. */
+  .evidence__cmd {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--s-2) var(--s-3);
+  }
+
+  .evidence__cmd > code {
+    flex: 1 1 16rem;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    word-break: normal;
+    overflow-wrap: break-word;
+  }
+
+  .evidence__fix {
+    display: grid;
+    gap: var(--s-2);
+    padding: var(--s-3) var(--s-4) var(--s-4);
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  /* Memori: the study card and the week. One card at a time, its prompt
+     large, the answer under a rule, and the grading buttons as one row.
+     The week sits beside the streak count: seven dots, filled for a day
+     studied, a ring for a day missed, today outlined. */
+  .study-card {
+    display: grid;
+    gap: var(--s-5);
+    max-width: 36rem;
+    padding: var(--s-6);
+    border: 1px solid var(--line);
+    border-radius: var(--r-xl);
+    background: var(--surface);
+  }
+
+  .study-card__meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--s-1) var(--s-4);
+    color: var(--text-3);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+  }
+
+  .study-card__prompt {
+    font-size: var(--fs-24);
+    line-height: var(--lh-24);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    text-wrap: balance;
+  }
+
+  .study-card__answer {
+    padding-block-start: var(--s-5);
+    border-top: 1px solid var(--line);
+    color: var(--text-2);
+  }
+
+  /* The product's own grades, one row at every width (stacked only under
+     20rem), each a word with its key hint. Never add or remove a grade. */
+  .study-card__grades {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s-2);
+  }
+
+  .study-card__grades > .btn {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .study-card__key {
+    color: var(--text-3);
+    font-family: var(--font-mono);
+    font-size: var(--fs-12);
+    line-height: var(--lh-12);
+    font-weight: 400;
+  }
+
+  @media (max-width: 20rem) {
+    .study-card__grades {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  .week {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-2) var(--s-3);
+  }
+
+  .week__count {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .week__days {
+    display: flex;
+    gap: var(--s-1);
+    list-style: none;
+  }
+
+  .week__days > li {
+    width: 0.75rem;
+    height: 0.75rem;
+    border: 1.5px solid var(--line-strong);
+    border-radius: 50%;
+  }
+
+  .week__days > [data-done] {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+
+  .week__days > [aria-current] {
+    outline: 1.5px solid var(--text);
+    outline-offset: 1.5px;
+  }
+
+  /* PDFree: the desk and its paper. Pages are always white with a
+     hairline, whatever the theme, because they are the document; the page
+     number is mono under each. The selected page's number is set heavier
+     and underlined in the accent, and its sheet gets the accent edge. */
+  .desk {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+    gap: var(--s-5) var(--s-4);
+    padding: var(--s-5);
+    border-radius: var(--r-lg);
+    background: var(--sunken);
+    list-style: none;
+  }
+
+  .paper {
+    display: grid;
+    justify-items: center;
+    gap: var(--s-2);
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text-2);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .paper__sheet {
+    display: block;
+    width: 100%;
+    aspect-ratio: 1 / 1.414;
+    padding: 12%;
+    border: 1px solid oklch(0.86 0 0);
+    border-radius: 2px;
+    background:
+      repeating-linear-gradient(to bottom, oklch(0.88 0 0) 0 2px, transparent 2px 9px) content-box,
+      #fff;
+    box-shadow: 0 1px 2px oklch(0 0 0 / 0.08);
+    transition: border-color var(--t-fast) var(--ease);
+  }
+
+  .paper:hover .paper__sheet {
+    border-color: var(--control-line);
+  }
+
+  .paper:focus-visible {
+    outline: none;
+  }
+
+  .paper:focus-visible .paper__sheet {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .paper__n {
+    font-family: var(--font-mono);
+    font-size: var(--fs-12);
+    line-height: var(--lh-12);
+    font-variant-numeric: tabular-nums;
+    text-decoration: underline 2px transparent;
+    text-underline-offset: 0.3em;
+  }
+
+  .paper[aria-pressed="true"] .paper__sheet,
+  .paper[aria-current="page"] .paper__sheet {
+    border-color: var(--accent);
+  }
+
+  .paper[aria-pressed="true"] .paper__n,
+  .paper[aria-current="page"] .paper__n {
+    color: var(--text);
+    font-weight: 600;
+    text-decoration-color: var(--accent);
+  }
+
+  /* VanityGrinder: the match. The part of an address the user asked for,
+     set heavier and underlined in the accent inside the mono value. While
+     the grinder runs, a block cursor blinks at the end of the console: the
+     system's fourth named loop (see DESIGN.md, Motion). */
+  .match {
+    background: none;
+    color: inherit;
+    font-weight: 600;
+    text-decoration: underline 2px var(--accent);
+    text-underline-offset: 0.25em;
+    text-decoration-skip-ink: none;
+  }
+
+  .console__cursor {
+    display: inline-block;
+    width: 1ch;
+    margin-inline-start: 0.15ch;
+    height: 1.1em;
+    vertical-align: text-bottom;
+    background: currentColor;
+    animation: qt-blink 1.1s steps(1, end) infinite;
+  }
+
+  /* ══ v2.3: the reference bar ══════════════════════════════════════════
+     The patterns the best product sites share, rebuilt in the system's own
+     terms (DESIGN.md, "v2.3: the reference bar"): the real product shown,
+     structure from hairlines, counts and units beside what they describe,
+     facts in mono, asymmetry instead of centred symmetry, and motion only
+     where a state changes. Nothing below loops, glows or reveals on
+     scroll; every part reads correctly with no script, in both themes,
+     right to left, in forced colours and on paper. ══════════════════════ */
+
+  /* ── Hero lead: the headline on the start side and the lede with the
+     actions beside it, their last lines on one baseline, so the product
+     shown under it can take the full width. One column below 60rem. ── */
+  .hero__lead {
+    display: grid;
+    align-items: end;
+    gap: var(--s-5) var(--s-16);
+  }
+
+  @media (min-width: 60rem) {
+    .hero__lead {
+      grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    }
+  }
+
+  /* ── Announcement: one link above a hero, to a real and recent change
+     (a changelog entry). Remove it when it goes stale. ── */
+  .announce {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    width: fit-content;
+    max-width: 100%;
+    min-height: var(--control-h-sm);
+    padding: var(--s-1) var(--s-3);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-pill);
+    color: var(--text-2);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    font-weight: 500;
+    text-decoration: none;
+    transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+
+  .announce:hover {
+    border-color: var(--control-line);
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  /* The version or date the link points at, set off by a hairline. */
+  .announce__tag {
+    padding-inline-end: var(--s-2);
+    border-inline-end: 1px solid var(--line-strong);
+    color: var(--text-3);
+    font-family: var(--font-mono);
+    font-size: var(--fs-12);
+  }
+
+  @media (pointer: coarse) {
+    .announce {
+      min-height: var(--target);
+    }
+  }
+
+  /* A trailing arrow on a link or button nudges 2px toward where it goes.
+     The individual scale property mirrors it in right-to-left text; the
+     nudge is a transform applied inside it, so it mirrors too. */
+  .icon--go {
+    scale: var(--qt-dir) 1;
+    transition: transform var(--t-fast) var(--ease);
+  }
+
+  :is(a, button):hover > .icon--go {
+    transform: translateX(2px);
+  }
+
+  /* ── Search with a keyboard hint. The hint shows only when system.js is
+     running (the shortcut is its), never under a coarse pointer, and
+     steps aside while the field has focus or text. Needs a placeholder. ── */
+  .search {
+    position: relative;
+    display: block;
+    width: 100%;
+    max-width: var(--w-field);
+  }
+
+  /* In an app bar the search takes the middle and is quiet at rest: a
+     filled field with a hairline, 36px, which takes the 3:1 control edge on
+     hover and focus. Its search icon and placeholder (4.5:1) are what
+     identify it (WCAG 1.4.11). */
+  .shell__bar > .search {
+    flex: 1 1 auto;
+    max-width: 24rem;
+    margin-inline: auto;
+  }
+
+  .shell__bar > .search > .input {
+    height: 2.25rem;
+    min-height: 2.25rem;
+    border-color: var(--line-strong);
+    background: var(--sunken);
+  }
+
+  .shell__bar > .search > .input:hover {
+    border-color: var(--control-line);
+  }
+
+  .shell__bar > .search > .input:focus-visible {
+    border-color: var(--accent);
+    background: var(--surface);
+  }
+
+  .search > .icon {
+    position: absolute;
+    inset-inline-start: var(--s-3);
+    top: 50%;
+    color: var(--text-3);
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
+  .search > .input {
+    padding-inline: 2.25rem 2.75rem;
+  }
+
+  .search__kbd {
+    position: absolute;
+    inset-inline-end: var(--s-2);
+    top: 50%;
+    transform: translateY(-50%);
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity var(--t-fast) var(--ease);
+  }
+
+  html[data-qt-js] .search__kbd {
+    visibility: visible;
+  }
+
+  .search > .input:focus ~ .search__kbd,
+  .search > .input:not(:placeholder-shown) ~ .search__kbd {
+    opacity: 0;
+  }
+
+  @media (pointer: coarse) {
+    .search__kbd {
+      display: none;
+    }
+
+    .search > .input {
+      padding-inline-end: var(--s-3);
+    }
+
+    .shell__bar > .search > .input {
+      height: var(--target);
+    }
+  }
+
+  /* ── Filter chips: one row of toggles with real counts. It scrolls
+     sideways when it does not fit; system.js fades only the edge that
+     has more (data-overflow="start end"). A chip is a toggle
+     (aria-pressed) or a link to a filtered view (aria-current="page"):
+     chosen is the neutral current fill plus one accent dot. ── */
+  .chips {
+    display: flex;
+    gap: var(--s-2);
+    margin: 0 calc(-1 * var(--s-1));
+    padding: var(--s-1);
+    overflow-x: auto;
+    list-style: none;
+    scrollbar-width: none;
+    /* Wider than the 2.5rem edge fade, so a chip scrolled in for focus
+       stops clear of it. */
+    scroll-padding-inline: var(--s-12);
+  }
+
+  .chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .chips--wrap {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .chips[data-overflow="end"] {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent);
+  }
+
+  .chips[data-overflow="start"] {
+    -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 2.5rem), transparent);
+    mask-image: linear-gradient(to left, #000 calc(100% - 2.5rem), transparent);
+  }
+
+  .chips[data-overflow="start end"] {
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 2.5rem, #000 calc(100% - 2.5rem), transparent);
+    mask-image: linear-gradient(to right, transparent, #000 2.5rem, #000 calc(100% - 2.5rem), transparent);
+  }
+
+  [dir="rtl"] .chips[data-overflow="end"] {
+    -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 2.5rem), transparent);
+    mask-image: linear-gradient(to left, #000 calc(100% - 2.5rem), transparent);
+  }
+
+  [dir="rtl"] .chips[data-overflow="start"] {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent);
+  }
+
+  .chip {
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--s-2);
+    min-height: var(--control-h-sm);
+    margin: 0;
+    padding: 0 var(--s-3);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-pill);
+    background: transparent;
+    color: var(--text-2);
+    font-family: var(--font-sans);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    font-weight: 500;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
+      color var(--t-fast) var(--ease);
+  }
+
+  :is(a, button).chip {
+    cursor: pointer;
+  }
+
+  :is(a, button).chip:hover {
+    border-color: var(--control-line);
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .chip[aria-pressed="true"],
+  .chip[aria-current="page"],
+  .chip[aria-current="true"] {
+    border-color: var(--control-line);
+    background: var(--current);
+    color: var(--text);
+  }
+
+  .chip[aria-pressed="true"]::before,
+  .chip[aria-current="page"]::before,
+  .chip[aria-current="true"]::before {
+    content: "";
+    flex: none;
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .chip__n {
+    color: var(--text-3);
+    font-family: var(--font-mono);
+    font-size: var(--fs-12);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chip:is([aria-pressed="true"], [aria-current="page"], [aria-current="true"]) .chip__n {
+    color: var(--text-2);
+  }
+
+  @media (pointer: coarse) {
+    :is(a, button).chip {
+      min-height: var(--target);
+    }
+  }
+
+  /* ── Cells: a spec sheet, not three icon cards. One bordered rectangle
+     split by shared hairlines; each cell a heading, a sentence and, where
+     one exists, a fact in mono (a setting, a limit, an alert kind). One
+     column, then two from 48rem (an odd last cell spans), then one row
+     from 60rem. Two to four cells. ── */
+  .cells {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--line);
+    list-style: none;
+  }
+
+  @media (min-width: 48rem) {
+    .cells {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .cells > :last-child:nth-child(odd) {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (min-width: 60rem) {
+    .cells:not(.cells--two) {
+      grid-template-columns: none;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(0, 1fr);
+    }
+
+    .cells:not(.cells--two) > :last-child:nth-child(odd) {
+      grid-column: auto;
+    }
+  }
+
+  .cell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    min-width: 0;
+    padding: var(--s-6);
+    background: var(--cells-bg, var(--bg));
+  }
+
+  .cell :is(h3, h4) {
+    font-size: var(--fs-16);
+    line-height: var(--lh-16);
+  }
+
+  .cell p {
+    color: var(--text-2);
+    font-size: var(--fs-15);
+    line-height: var(--lh-15);
+  }
+
+  .cell .cell__fact {
+    margin-block-start: auto;
+    padding-block-start: var(--s-4);
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    overflow-wrap: anywhere;
+  }
+
+  /* ── Bento: unequal tiles, each showing a real fragment of the product.
+     Six columns from 60rem: a tile spans two, --wide three, --large four,
+     --full all; two columns from 48rem; one below. One bento per page,
+     three to five tiles, never decoration in a tile. ── */
+  .bento {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-3);
+  }
+
+  @media (min-width: 48rem) {
+    .bento {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .bento > :is(.tile--wide, .tile--large, .tile--full) {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (min-width: 60rem) {
+    .bento {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+
+    .bento > .tile {
+      grid-column: span 2;
+    }
+
+    .bento > .tile--wide {
+      grid-column: span 3;
+    }
+
+    .bento > .tile--large {
+      grid-column: span 4;
+    }
+
+    .bento > .tile--full {
+      grid-column: 1 / -1;
+    }
+  }
+
+  .tile {
+    --tile-pad: var(--s-6);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    min-width: 0;
+    padding: var(--tile-pad);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+  }
+
+  .tile__title {
+    font-size: var(--fs-16);
+    line-height: var(--lh-16);
+    font-weight: 600;
+  }
+
+  .tile__text {
+    max-width: 30rem;
+    color: var(--text-2);
+    font-size: var(--fs-15);
+    line-height: var(--lh-15);
+  }
+
+  /* A peek: a crop of the real interface, a window corner cut by the
+     tile. Its negative margin equals the tile's padding, so it meets the
+     tile's end and bottom edges exactly. Only a top and a start hairline,
+     so it is not a box inside a box. It sits 24px under the text, not
+     pushed to the bottom: a tile is as tall as what it holds. */
+  .tile__peek {
+    min-width: 0;
+    margin-block: var(--s-6) calc(-1 * var(--tile-pad));
+    margin-inline: var(--s-4) calc(-1 * var(--tile-pad));
+    padding: var(--s-4) var(--s-5);
+    overflow: hidden;
+    border-block-start: 1px solid var(--line);
+    border-inline-start: 1px solid var(--line);
+    border-start-start-radius: var(--r-md);
+    background: var(--bg);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+  }
+
+  @media (min-width: 48rem) {
+    .tile__peek {
+      margin-inline-start: var(--s-6);
+    }
+  }
+
+  .tile__peek--flush {
+    padding: 0;
+  }
+
+  /* A component placed in a peek loses its own frame, and a key-value
+     list its outer rules: the peek's hairlines are the only frame. */
+  .tile__peek > :is(.diff, .code, .kv, .evidence, .console, .findings, .stats__grid, .data-table) {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .tile__peek > .kv > div:first-child {
+    border-top: 0;
+    padding-block-start: 0;
+  }
+
+  .tile__peek > .kv > div:last-child {
+    border-bottom: 0;
+    padding-block-end: 0;
+  }
+
+  /* The large tile leads: its peek is the sunken work surface. */
+  .tile--large {
+    --spot-bg: var(--surface);
+  }
+
+  .tile--large > .tile__peek {
+    background: var(--sunken);
+  }
+
+  /* ── Spotlight: a tile's hairline brightens, in neutrals, near the
+     pointer (system.js sets --spot-x and --spot-y through the CSSOM).
+     The one ambient effect a view may have, on two to four large
+     choosable tiles. Fine pointers only; nothing under reduced motion or
+     in forced colours; never the accent. (Not gated on reduced
+     transparency: nothing here is translucent, and an engine that does not
+     know that media feature would drop the rule.) ── */
+  .spot {
+    --spot-x: -100rem;
+    --spot-y: -100rem;
+  }
+
+  @media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+    html[data-qt-js] .spot {
+      border-color: transparent;
+      background:
+        linear-gradient(var(--spot-bg, var(--surface)), var(--spot-bg, var(--surface))) padding-box,
+        radial-gradient(18rem circle at var(--spot-x) var(--spot-y), var(--control-line), var(--line) 100%) border-box;
+    }
+  }
+
+  /* ── Showcase: the real product, framed. A plinth is a tinted panel the
+     interface rises out of: the window's top corners are round and its
+     bottom runs into the plinth's edge. Optional static texture (a line
+     grid or dots, under 1.3:1, fading out from the top) says "workspace";
+     never behind text, never animated. ── */
+  .plinth {
+    --texture: color-mix(in oklab, var(--text) 9%, transparent);
+    --plinth-bg: var(--qt-light, var(--sunken)) var(--qt-dark, var(--surface));
+    position: relative;
+    isolation: isolate;
+    /* A crop: the frame inside runs past the plinth's foot and fades out
+       over the last 4rem, so the cut reads as "there is more". Static;
+       print and forced colours drop the fade. */
+    max-block-size: min(34rem, 70vh);
+    padding: var(--s-6) var(--s-3) 0;
+    overflow: hidden;
+    border-radius: var(--r-xl);
+    background: var(--plinth-bg);
+    -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 4rem), transparent);
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 4rem), transparent);
+  }
+
+  /* A plinth that holds its content whole (Memori's card, shown as
+     itself) is not cut. */
+  .plinth--whole {
+    max-block-size: none;
+    padding-block-end: var(--s-6);
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  @media (min-width: 48rem) {
+    .plinth {
+      padding: var(--s-10) var(--s-10) 0;
+    }
+
+    .plinth--whole {
+      padding-block-end: var(--s-10);
+    }
+  }
+
+  .plinth > .window,
+  .plinth > .device {
+    position: relative;
+    margin-inline: auto;
+  }
+
+  .plinth > .window {
+    max-width: 64rem;
+    border-bottom-width: 0;
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+  }
+
+  /* The one lift in the system outside overlays: the product shown rises
+     off its plinth with a soft, layered shadow (DESIGN.md, Depth). In dark,
+     a 1px light on the top edge and a deeper shadow. */
+  .plinth > :is(.window, .device) {
+    box-shadow:
+      var(--qt-light, 0 1px 2px oklch(0.2 0.01 var(--hue) / 0.06), 0 24px 48px -24px oklch(0.2 0.02 var(--hue) / 0.18))
+      var(--qt-dark, inset 0 1px 0 oklch(1 0 0 / 0.06), 0 24px 48px -24px oklch(0 0 0 / 0.5));
+  }
+
+  /* Several frames, or a frame and what goes beside it, on one plinth. */
+  .plinth__stage {
+    position: relative;
+    display: grid;
+    gap: var(--s-6);
+    align-items: start;
+    max-width: 64rem;
+    margin-inline: auto;
+  }
+
+  @media (min-width: 60rem) {
+    .plinth__stage {
+      grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+      gap: var(--s-10);
+    }
+  }
+
+  .plinth > .device {
+    border-bottom-width: 0;
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+    padding-block-end: 0;
+  }
+
+  .plinth > .device > .device__screen {
+    border-bottom-width: 0;
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+  }
+
+  .plinth--grid::before,
+  .plinth--dots::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    -webkit-mask-image: radial-gradient(ellipse 75% 70% at 50% 0%, #000 25%, transparent 80%);
+    mask-image: radial-gradient(ellipse 75% 70% at 50% 0%, #000 25%, transparent 80%);
+  }
+
+  .plinth--grid::before {
+    background-image:
+      linear-gradient(to right, var(--texture) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--texture) 1px, transparent 1px);
+    background-position: 50% 0;
+    background-size: 2rem 2rem;
+  }
+
+  .plinth--dots::before {
+    background-image: radial-gradient(circle, var(--texture) 1px, transparent 1.5px);
+    background-position: 50% 0;
+    background-size: 1rem 1rem;
+  }
+
+  /* A window: the product's own interface in a plain frame. A bar with
+     the real address (or command) in mono and a "Sample" note; no
+     traffic-light dots, no browser imitation. */
+  .window {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-lg);
+    background: var(--surface);
+  }
+
+  /* The address takes the middle and gives way first: it shrinks to an
+     ellipsis before the note beside it moves. */
+  .window__bar {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    min-height: 2.5rem;
+    padding-inline: var(--s-4);
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--text-3);
+    font-size: var(--fs-12);
+    line-height: var(--lh-12);
+  }
+
+  .window__url {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-inline: auto;
+    padding: var(--s-1) var(--s-3);
+    overflow: hidden;
+    border-radius: var(--r-pill);
+    background: var(--sunken);
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
+  .window__meta {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  .window__body {
+    min-width: 0;
+  }
+
+  .window__body--pad {
+    padding: var(--s-6);
+  }
+
+  /* A diff, a code block or a console laid straight into a window takes
+     the window's frame instead of drawing its own. */
+  .window__body > :is(.diff, .code, .evidence, .console),
+  .window__split > * > :is(.diff, .code, .evidence, .console) {
+    border: 0;
+    border-radius: 0;
+  }
+
+  /* A window with a side panel: the main view and a panel beside it (a
+     findings list, a call's tape, a document's pages), split by a hairline.
+     --start puts the panel first (on the start side). Stacked under 48rem,
+     in markup order. */
+  .window__split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .window__split > * {
+    min-width: 0;
+  }
+
+  .window__side {
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+  }
+
+  .window__side:first-child {
+    border-top: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  @media (min-width: 48rem) {
+    .window__split {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 18rem);
+    }
+
+    .window__split--start {
+      grid-template-columns: minmax(0, 18rem) minmax(0, 1fr);
+    }
+
+    .window__side {
+      border-top: 0;
+      border-inline-start: 1px solid var(--line);
+    }
+
+    .window__side:first-child {
+      border-bottom: 0;
+      border-inline-start: 0;
+      border-inline-end: 1px solid var(--line);
+    }
+  }
+
+  @media (max-width: 47.99rem) {
+    .window__body--pad {
+      padding: var(--s-4) var(--s-3);
+    }
+  }
+
+  /* A phone, for a product that is an app (Debate): a plain rounded
+     frame, no notch and no hardware. */
+  .device {
+    width: min(100%, 22rem);
+    padding: var(--s-2);
+    border: 1px solid var(--line-strong);
+    border-radius: 2.5rem;
+    background: var(--surface);
+  }
+
+  .device__screen {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: 2rem;
+    background: var(--bg);
+  }
+
+  /* ── Command block with choices (an OS, a package manager): tabs in the
+     code bar, one <pre> per choice. data-qt-sync="<key>" on the tab list
+     keeps every block with that key on the same choice and remembers it. ── */
+  .code__tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-1);
+    margin-inline-start: calc(-1 * var(--s-2));
+  }
+
+  .code__tab {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--control-h-sm);
+    margin: 0;
+    padding: 0 var(--s-2);
+    border: 0;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-2);
+    font-family: var(--font-sans);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+
+  .code__tab:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+
+  .code__tab[aria-selected="true"] {
+    background: var(--current);
+    color: var(--text);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+
+  @media (pointer: coarse) {
+    .code__tab {
+      min-height: var(--target);
+    }
+  }
+
+  /* No script: every choice is shown, each under its own label
+     (data-label on the <pre>), and controls that only script can work are
+     not drawn. The media query, not a script-set class, so nothing moves
+     when a deferred script arrives. */
+  @media (scripting: none) {
+    .code > pre[role="tabpanel"] + pre[role="tabpanel"] {
+      border-top: 1px solid var(--line);
+    }
+
+    .code > pre[data-label]::before {
+      content: attr(data-label);
+      display: block;
+      margin-block-end: var(--s-1);
+      color: var(--text-3);
+      font-family: var(--font-sans);
+      font-size: var(--fs-12);
+      line-height: var(--lh-12);
+    }
+
+    .code__tabs,
+    [data-copy],
+    [data-clipboard-clear] {
+      display: none;
+    }
+  }
+
+  /* ── Walkthrough: numbered steps that point at lines of a real artifact
+     (a config, a command's output). Choosing a step (pointer, focus or click) marks its
+     lines: the current fill and a 2px accent bar. Without script the
+     author's own data-hit lines stay marked. ── */
+  .walk {
+    display: grid;
+    gap: var(--s-8);
+    align-items: start;
+  }
+
+  @media (min-width: 60rem) {
+    .walk {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+      gap: var(--s-12);
+    }
+  }
+
+  .walk__steps {
+    display: grid;
+    gap: var(--s-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .walk__step {
+    display: grid;
+    grid-template-columns: 1.5rem minmax(0, 1fr);
+    gap: var(--s-1) var(--s-3);
+    width: 100%;
+    margin: 0;
+    padding: var(--s-3);
+    border: 1px solid transparent;
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--text-2);
+    font-family: var(--font-sans);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+    text-align: start;
+    cursor: pointer;
+    transition: background-color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
+      color var(--t-fast) var(--ease);
+  }
+
+  .walk__step:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+
+  .walk__step[aria-current="step"] {
+    border-color: var(--line);
+    background: var(--current);
+    color: var(--text);
+  }
+
+  .walk__n {
+    grid-row: span 2;
+    display: inline-grid;
+    place-items: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: var(--fs-12);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .walk__step[aria-current="step"] .walk__n {
+    border-color: var(--accent);
+    color: var(--accent-text);
+  }
+
+  .walk__title {
+    display: block;
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .walk__text {
+    display: block;
+  }
+
+  /* Numbered lines: code is read left to right in any page direction. */
+  .lines {
+    counter-reset: line;
+    margin: 0;
+    padding: var(--s-4) 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--sunken);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    white-space: normal;
+    direction: ltr;
+    text-align: left;
+    unicode-bidi: isolate;
+  }
+
+  .line {
+    display: grid;
+    grid-template-columns: 3rem minmax(0, 1fr);
+    padding-inline-end: var(--s-4);
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    transition: background-color var(--t-base) var(--ease), box-shadow var(--t-base) var(--ease);
+  }
+
+  .line::before {
+    counter-increment: line;
+    content: counter(line);
+    padding-inline-end: var(--s-4);
+    color: var(--text-3);
+    text-align: end;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .line[data-hit] {
+    background: var(--current);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+
+  .lines .comment {
+    color: var(--text-3);
+  }
+
+  /* ── Stats, v2.3: a unit beside the figure, the change with its window,
+     and an optional trend line (aria-hidden; the change line says it in
+     words). Only measured numbers. ── */
+  .stat__unit {
+    margin-inline-start: 0.125rem;
+    line-height: 1;
+    color: var(--text-3);
+    font-size: var(--fs-14);
+    font-weight: 400;
+    letter-spacing: 0;
+  }
+
+  .stat__delta {
+    order: -1;
+    color: var(--text-2);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .stat__delta--good {
+    color: var(--ok);
+  }
+
+  .stat__delta--bad {
+    color: var(--danger);
+  }
+
+  /* <dd class="stat__spark" aria-hidden="true"><svg viewBox="0 0 100 24"
+     preserveAspectRatio="none"><polyline points="…" /></svg></dd> */
+  .stat__spark {
+    order: -2;
+    height: 1.5rem;
+    margin-block-start: var(--s-1);
+    color: var(--text-3);
+  }
+
+  .stat__spark > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .stat__spark > svg * {
+    vector-effect: non-scaling-stroke;
+  }
+
+  /* The last segment (.stat__spark-now, a <line>) reads first, in text-2,
+     and ends on a 4px dot (.stat__spark-dot, a zero-length path with a
+     round cap, so it stays round in the stretched viewBox). */
+  .stat__spark .stat__spark-now,
+  .stat__spark .stat__spark-dot {
+    stroke: var(--text-2);
+  }
+
+  .stat__spark .stat__spark-dot {
+    stroke-width: 4;
+  }
+
+  /* ── Meter: how much of a limit is used, and when it resets. A native
+     <meter> (no script, announced as it is), the figure in words beside
+     it, the reset time from the server. Status colour only when the
+     meter's own low/high marks say so, and then with a word. ── */
+  .meter {
+    display: grid;
+    align-content: start;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+
+  .meter__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--s-1) var(--s-3);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+  }
+
+  .meter__label {
+    color: var(--text-2);
+    font-weight: 500;
+  }
+
+  .meter__note {
+    color: var(--text-3);
+  }
+
+  .meter__figure {
+    font-size: var(--fs-20);
+    line-height: var(--lh-20);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .meter__of {
+    line-height: 1;
+    color: var(--text-3);
+    font-size: var(--fs-14);
+    font-weight: 400;
+    letter-spacing: 0;
+  }
+
+  .meter__bar {
+    display: block;
+    width: 100%;
+    height: 0.5rem;
+    margin: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--r-pill);
+    background: var(--line-strong);
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  .meter__bar::-webkit-meter-inner-element {
+    display: block;
+    height: 100%;
+  }
+
+  .meter__bar::-webkit-meter-bar {
+    height: 100%;
+    border: 0;
+    border-radius: var(--r-pill);
+    background: var(--line-strong);
+  }
+
+  .meter__bar::-webkit-meter-optimum-value {
+    border-radius: var(--r-pill);
+    background: var(--text-2);
+  }
+
+  .meter__bar::-webkit-meter-suboptimum-value {
+    border-radius: var(--r-pill);
+    background: var(--warn);
+  }
+
+  .meter__bar::-webkit-meter-even-less-good-value {
+    border-radius: var(--r-pill);
+    background: var(--danger);
+  }
+
+  .meter__bar::-moz-meter-bar {
+    border-radius: var(--r-pill);
+    background: var(--text-2);
+  }
+
+  .meter__bar:-moz-meter-sub-optimum::-moz-meter-bar {
+    background: var(--warn);
+  }
+
+  .meter__bar:-moz-meter-sub-sub-optimum::-moz-meter-bar {
+    background: var(--danger);
+  }
+
+  /* The word that goes with a low meter ("Low", "Almost used"). */
+  .meter__state {
+    color: var(--warn);
+    font-weight: 500;
+  }
+
+  /* ── Stages: a job's steps with the current one marked (Enumerate,
+     Probe, Analyse, Report). Done is ink, current the accent, still to
+     come the hairline; the words say it too (aria-current="step", and
+     ", done" for screen readers). Counts and time left go in words
+     beside it, never invented. ── */
+  .stages {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    gap: var(--s-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .stages > li {
+    display: grid;
+    align-content: start;
+    gap: var(--s-2);
+    min-width: 0;
+    color: var(--text-3);
+    font-size: var(--fs-13);
+    line-height: var(--lh-13);
+    overflow-wrap: anywhere;
+  }
+
+  .stages > li::before {
+    content: "";
+    display: block;
+    height: 0.25rem;
+    border-radius: var(--r-pill);
+    background: var(--line-strong);
+  }
+
+  .stages > [data-state="done"] {
+    color: var(--text-2);
+  }
+
+  .stages > [data-state="done"]::before {
+    background: var(--text-2);
+  }
+
+  .stages > [aria-current="step"] {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .stages > [aria-current="step"]::before {
+    background: var(--accent);
+  }
+
+  /* ── Readout: an instrument's live figure framed by four corner ticks,
+     not a box. One group per product, where the readout is the product
+     (VanityGrinder's console figures). ── */
+  .readouts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+    gap: var(--s-3);
+  }
+
+  .readout {
+    --tick: var(--line-strong);
+    --tick-s: 0.75rem;
+    display: grid;
+    align-content: start;
+    gap: var(--s-1);
+    min-width: 0;
+    padding: var(--s-4);
+    background:
+      linear-gradient(var(--tick), var(--tick)) top left / var(--tick-s) 1px,
+      linear-gradient(var(--tick), var(--tick)) top left / 1px var(--tick-s),
+      linear-gradient(var(--tick), var(--tick)) top right / var(--tick-s) 1px,
+      linear-gradient(var(--tick), var(--tick)) top right / 1px var(--tick-s),
+      linear-gradient(var(--tick), var(--tick)) bottom left / var(--tick-s) 1px,
+      linear-gradient(var(--tick), var(--tick)) bottom left / 1px var(--tick-s),
+      linear-gradient(var(--tick), var(--tick)) bottom right / var(--tick-s) 1px,
+      linear-gradient(var(--tick), var(--tick)) bottom right / 1px var(--tick-s);
+    background-repeat: no-repeat;
+  }
+
+  .readout--current {
+    --tick: var(--accent);
+  }
+
+  .readout__label {
+    color: var(--text-3);
+    font-family: var(--font-mono);
+    font-size: var(--fs-12);
+    line-height: var(--lh-12);
+  }
+
+  .readout__value {
+    font-size: var(--fs-20);
+    line-height: var(--lh-20);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  /* ── Changelog: dated entries on hairlines, the date sticky beside the
+     notes from 48rem. The kind is a word (Added, Improved, Fixed) in a
+     neutral pill, never a colour. ── */
+  .changelog {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .changelog > li {
+    display: grid;
+    gap: var(--s-3) var(--s-8);
+    padding-block: var(--s-8);
+    border-top: 1px solid var(--line);
+  }
+
+  .changelog__when {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-2) var(--s-3);
+    color: var(--text-2);
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  .changelog__when time {
+    font-family: var(--font-mono);
+    font-size: var(--fs-13);
+  }
+
+  .changelog__body {
+    min-width: 0;
+  }
+
+  .changelog__body > * + * {
+    margin-block-start: var(--s-3);
+  }
+
+  .changelog__body :is(h3, h4) {
+    font-size: var(--fs-16);
+    line-height: var(--lh-16);
+  }
+
+  .changelog__body :is(p, li) {
+    color: var(--text-2);
+  }
+
+  @media (min-width: 48rem) {
+    .changelog > li {
+      grid-template-columns: 11rem minmax(0, 1fr);
+    }
+
+    .changelog__when {
+      position: sticky;
+      top: calc(var(--nav-h) + var(--s-6));
+      flex-direction: column;
+      align-items: flex-start;
+      align-self: start;
+    }
+  }
+
+  /* A build stamp: the version, the commit and the build time, injected
+     at build, never typed. */
+  .stamp {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--s-2);
+    color: var(--text-3);
+    font-family: var(--font-mono);
+    font-size: var(--fs-12);
+    line-height: var(--lh-12);
+  }
+
+  .stamp > * + *::before {
+    content: "·";
+    content: "·" / "";
+    margin-inline-end: var(--s-2);
+  }
+
+  /* ── Empty state art: the product's own icon, fanned three deep. Static,
+     aria-hidden, no illustration. ── */
+  .empty__art {
+    display: grid;
+    margin-block-end: var(--s-2);
+  }
+
+  .empty__art > * {
+    grid-area: 1 / 1;
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-md);
+    background: var(--surface);
+    color: var(--text-2);
+  }
+
+  .empty__art > :nth-child(1) {
+    transform: translateX(-1.125rem) rotate(-12deg) scale(0.86);
+    transform-origin: 50% 100%;
+  }
+
+  .empty__art > :nth-child(2) {
+    transform: translateX(1.125rem) rotate(12deg) scale(0.86);
+    transform-origin: 50% 100%;
+  }
+
+  /* ── Plans, v2.3: two plans side by side but not equal (3:5 from
+     60rem), the one most people want given the room, not a badge. ── */
+  @media (min-width: 60rem) {
+    .plans--split {
+      grid-auto-flow: row;
+      grid-template-columns: minmax(0, 3fr) minmax(0, 5fr);
+    }
+
+    .plans--split > .plan:last-child .plan__list {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      column-gap: var(--s-6);
+    }
+  }
+
+  /* ── The bar settles: with .nav--settle and system.js, the hairline
+     under the bar shows only once the page has scrolled under it. ── */
+  .nav--settle {
+    transition: border-color var(--t-base) var(--ease);
+  }
+
+  html[data-qt-js] .nav--settle:not([data-scrolled]) {
+    border-bottom-color: transparent;
+  }
+
+  /* ── Reading progress for a long document (legal, a long report): a
+     2px accent line driven by the scroll position itself, where the
+     engine can (no script). Elsewhere, and under reduced motion, none. ── */
+  .read-progress {
+    display: none;
+  }
+
+  @supports (animation-timeline: scroll()) {
+    .read-progress {
+      position: fixed;
+      inset: 0 0 auto;
+      z-index: 30;
+      display: block;
+      height: 2px;
+      background: var(--accent);
+      transform: scaleX(0);
+      transform-origin: 0 50%;
+      pointer-events: none;
+      animation: qt-grow linear both;
+      animation-timeline: scroll(root);
+    }
+
+    [dir="rtl"] .read-progress {
+      transform-origin: 100% 50%;
+    }
+  }
+
+  /* ── Something that just arrived because of an action or a live event
+     (a new row, a result): one 180ms fade and 4px drop as it is inserted.
+     Never on page load, never on scroll. ── */
+  .arrive {
+    animation: qt-arrive var(--t-base) var(--ease) both;
+  }
+
+  /* ── Copy feedback with icons: a button holding .icon--copy and
+     .icon--done swaps them while it says "Copied". ── */
+  [data-copy] > .icon--done {
+    display: none;
+  }
+
+  [data-copy][data-qt-copied] > .icon--copy {
+    display: none;
+  }
+
+  [data-copy][data-qt-copied] > .icon--done {
+    display: inline-block;
+  }
+
+  /* Warm tooltips: once one tooltip has shown, the next one within 300ms
+     shows at once (system.js sets data-qt-warm on the root). */
+  html[data-qt-warm] .tip:hover:not(:focus-within) > .tooltip {
+    animation-delay: 0ms;
+  }
+
+  /* Scroll-spy contents (data-qt-spy, system.js): the section in view is
+     aria-current="location". */
+  :where([data-qt-spy]) a[aria-current="location"] {
+    color: var(--text);
+  }
+
+  /* ── Long-form prose: legal pages, documentation, help. ── */
+  .prose {
+    color: var(--text);
+    line-height: 1.75rem;
+  }
+
+  .prose > * + * {
+    margin-block-start: 1.25em;
+  }
+
+  .prose :is(h2, h3, h4) {
+    scroll-margin-top: calc(var(--nav-h) + var(--s-4));
+  }
+
+  .prose > h2 {
+    margin-block-start: 2.5em;
+    font-size: var(--fs-20);
+    line-height: var(--lh-20);
+  }
+
+  .prose > h3 {
+    margin-block-start: 2em;
+    font-size: var(--fs-16);
+    line-height: var(--lh-16);
+  }
+
+  .prose > :is(h2, h3, h4) + * {
+    margin-block-start: 0.75em;
+  }
+
+  .prose :is(ul, ol) {
+    padding-inline-start: 1.25rem;
+  }
+
+  .prose li + li {
+    margin-block-start: 0.5em;
+  }
+
+  .prose li::marker {
+    color: var(--text-3);
+  }
+
+  .prose blockquote {
+    padding-inline-start: var(--s-4);
+    border-inline-start: 2px solid var(--line-strong);
+    color: var(--text-2);
+  }
+
+  /* A bare table in prose; a .data-table keeps its own rules. */
+  .prose :where(table:not(.data-table)) {
+    width: 100%;
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  .prose :where(table:not(.data-table)) :is(th, td) {
+    padding: var(--s-2) var(--s-3);
+    border-bottom: 1px solid var(--line);
+    text-align: start;
+    vertical-align: top;
+  }
+
+  .prose :not(pre) > code {
+    padding: 0.0625rem 0.25rem;
+    border-radius: 4px;
+    background: var(--sunken);
+  }
+
+  .prose .updated {
+    color: var(--text-3);
+    font-size: var(--fs-14);
+  }
+
+  /* A legal page: contents beside the text from 60rem. */
+  .legal {
+    display: grid;
+    gap: var(--s-8);
+  }
+
+  @media (min-width: 60rem) {
+    .legal {
+      grid-template-columns: 14rem minmax(0, 1fr);
+      gap: var(--s-16);
+    }
+
+    .legal__toc {
+      position: sticky;
+      top: calc(var(--nav-h) + var(--s-6));
+      align-self: start;
+    }
+  }
+
+  .legal__toc > .label {
+    margin-block-end: var(--s-2);
+  }
+
+  .legal__toc ol {
+    display: grid;
+    gap: var(--s-2);
+    list-style: none;
+    font-size: var(--fs-14);
+    line-height: var(--lh-14);
+  }
+
+  :where(.legal__toc) a:not(.btn) {
+    color: var(--text-2);
+    text-decoration: none;
+  }
+
+  :where(.legal__toc) a:not(.btn):hover {
+    color: var(--text);
+    text-decoration: underline;
+  }
+
+  @media (pointer: coarse) {
+    .legal__toc ol {
+      gap: 0;
+    }
+
+    :where(.legal__toc) a:not(.btn) {
+      display: flex;
+      align-items: center;
+      min-height: var(--target);
+    }
+  }
+
+  /* From 60rem the contents hang on a hairline rail; the section in view
+     (system.js, data-qt-spy) takes the accent on it. */
+  @media (min-width: 60rem) {
+    .legal__toc ol {
+      gap: 0;
+      border-inline-start: 1px solid var(--line);
+    }
+
+    :where(.legal__toc) a:not(.btn) {
+      display: flex;
+      align-items: center;
+      margin-inline-start: -1px;
+      padding: var(--s-1) var(--s-3);
+      border-inline-start: 2px solid transparent;
+      transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
+    }
+
+    :where(.legal__toc) a[aria-current="location"]:not(.btn) {
+      border-inline-start-color: var(--accent);
+      color: var(--text);
+    }
+  }
+}
+
+/* ── Utilities: last, so they beat components of equal weight. ────────── */
+
+@layer qt.utilities {
+  /* Vertical rhythm: <div class="stack" data-stack="8"> puts 32px between
+     its children (16px without data-stack). The gap is set on each child by
+     its parent's rule, so a stack nested in a stack keeps its parent's gap
+     above it and its own gap inside it. In this layer so a component that
+     resets its margin (a fieldset, a console, a segmented control) still
+     gets the gap. A product sets another gap with `.thing > * { --stack: 1.75rem }`. */
+  .stack > * { --stack: var(--s-4); }
+  .hero__copy > * { --stack: var(--s-5); }
+  .section__head > * { --stack: var(--s-3); }
+  .stack[data-stack="1"] > * { --stack: var(--s-1); }
+  .stack[data-stack="2"] > * { --stack: var(--s-2); }
+  .stack[data-stack="3"] > * { --stack: var(--s-3); }
+  .stack[data-stack="5"] > * { --stack: var(--s-5); }
+  .stack[data-stack="6"] > * { --stack: var(--s-6); }
+  .stack[data-stack="8"] > * { --stack: var(--s-8); }
+  .stack[data-stack="10"] > * { --stack: var(--s-10); }
+  .stack[data-stack="12"] > * { --stack: var(--s-12); }
+
+  /* A dialog or a popover is in the top layer, not in the flow: a gap
+     above it would only push it off centre. */
+  .stack > * + :where(:not(dialog, [popover])) {
+    margin-block-start: var(--stack);
+  }
+
+  .stack > .sr-only + *,
+  .stack > [hidden] + * {
+    margin-block-start: 0;
+  }
+
+  .mono {
+    font-family: var(--font-mono);
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .muted {
+    color: var(--text-2);
+  }
+
+  .faint {
+    color: var(--text-3);
+  }
+
+  .nowrap {
+    white-space: nowrap;
+  }
+
+  .wrap-anywhere {
+    overflow-wrap: anywhere;
+  }
+
+  /* An inline SVG that only holds <symbol>s. */
+  .sprite {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+  }
+
+  /* No data here (a gap in a chart, an unmeasured period): a faint
+     diagonal hatch. Always with words; never decoration. */
+  .hatch {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      color-mix(in oklab, var(--text) 16%, transparent) 0 1px,
+      transparent 1px 6px
+    );
+  }
+}
+
+/* ── Modes: motion, forced colours, print. Last, so they win. ─────────── */
+
+@layer qt.modes {
+  @keyframes qt-arrive {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+  }
+
+  @keyframes qt-grow {
+    to {
+      transform: scaleX(1);
+    }
+  }
+
+  @keyframes qt-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes qt-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes qt-pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  @keyframes qt-fade {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes qt-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+
+  @keyframes qt-slide {
+    from {
+      transform: translateX(calc(-100% * var(--qt-dir)));
+    }
+    to {
+      transform: translateX(calc(340% * var(--qt-dir)));
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+
+    /* The reset above gives every property a transition, so a discrete one
+       (visibility, display) would now transition too, and a menu shown by
+       flipping visibility would still be hidden when focus moves into it.
+       Anything opened in the top layer or by visibility takes no transition
+       at all. */
+    [popover],
+    dialog,
+    .menu,
+    .nav__menu,
+    .tip .tooltip,
+    .toast {
+      transition: none !important;
+    }
+
+    /* The loops stop; the words carry the state. */
+    .progress--indeterminate .progress__bar {
+      width: 100%;
+      opacity: 0.35;
+      animation: none !important;
+    }
+
+    .console__cursor {
+      animation: none !important;
+    }
+
+    /* v2.3: the press, the arrow nudge and the reading line stay still. */
+    .btn:active,
+    :is(a, button):hover > .icon--go {
+      transform: none;
+    }
+
+    .arrive {
+      animation: none !important;
+    }
+
+    .read-progress {
+      display: none;
+    }
+  }
+
+  /* Windows contrast themes: backgrounds and shadows are replaced, so
+     every state is also drawn with a border, an outline or a system
+     colour. */
+  @media (forced-colors: active) {
+    /* Pressed is a Highlight fill; focus stays the separate outline. */
+    .btn[aria-pressed="true"] {
+      forced-color-adjust: none;
+      border-color: Highlight;
+      background: Highlight;
+      color: HighlightText;
+      box-shadow: none;
+    }
+
+    .check input:not(.switch),
+    .switch,
+    .segmented,
+    .grade {
+      border-color: ButtonText;
+    }
+
+    .check input:not(.switch):checked,
+    .switch:checked,
+    .switch::after,
+    .pill::before,
+    .note::before,
+    .banner::before,
+    .toast::before,
+    .sev::before,
+    .progress__bar,
+    .rail__item[aria-current="page"]::before,
+    .nav__link[aria-current="page"]::after,
+    .tab[aria-selected="true"]::after,
+    .tab[aria-current="page"]::after,
+    .plan--featured::before {
+      forced-color-adjust: none;
+    }
+
+    .check input:not(.switch):checked,
+    .switch:checked {
+      border-color: Highlight;
+      background: Highlight;
+    }
+
+    .check input:not(.switch)::before {
+      border-color: HighlightText;
+    }
+
+    .check input[type="radio"]::before {
+      background: HighlightText;
+    }
+
+    .switch {
+      background: Canvas;
+    }
+
+    .switch::after {
+      background: ButtonText;
+    }
+
+    .switch:checked::after {
+      background: HighlightText;
+    }
+
+    .select-wrap::after {
+      border-color: ButtonText;
+    }
+
+    /* Disabled controls use GrayText, the system's own disabled colour. */
+    .check:has(input:disabled) {
+      color: GrayText;
+    }
+
+    .check input:disabled,
+    .check input:disabled:checked,
+    .switch:disabled {
+      border-color: GrayText;
+      background: Canvas;
+    }
+
+    .check input:not(.switch):disabled:checked::before {
+      border-color: GrayText;
+    }
+
+    .check input[type="radio"]:disabled:checked::before,
+    .switch:disabled::after {
+      background: GrayText;
+    }
+
+    .range,
+    .range::-webkit-slider-runnable-track,
+    .range::-moz-range-track,
+    .range::-webkit-slider-thumb,
+    .range::-moz-range-thumb {
+      forced-color-adjust: none;
+    }
+
+    .range::-webkit-slider-runnable-track {
+      background: CanvasText;
+    }
+
+    .range::-moz-range-track {
+      background: CanvasText;
+    }
+
+    .range::-webkit-slider-thumb {
+      border-color: Canvas;
+      background: Highlight;
+    }
+
+    .range::-moz-range-thumb {
+      border-color: Canvas;
+      background: Highlight;
+    }
+
+    .pill::before,
+    .note::before,
+    .banner::before,
+    .toast::before {
+      background: CanvasText;
+    }
+
+    .pill--info::before,
+    .pill--accent::before,
+    .note:not(.note--ok, .note--warn, .note--danger)::before,
+    .banner:not(.banner--ok, .banner--warn, .banner--danger)::before {
+      background: Canvas;
+      border-color: CanvasText;
+    }
+
+    /* Empty steps are paper inside one outline, filled steps are ink: the
+       count reads without colour. */
+    .sev {
+      --s1: Canvas;
+      --s2: Canvas;
+      --s3: Canvas;
+      --s4: Canvas;
+    }
+
+    .sev::before {
+      outline: 1px solid CanvasText;
+      outline-offset: 1px;
+    }
+
+    .sev--critical { --s1: CanvasText; --s2: CanvasText; --s3: CanvasText; --s4: CanvasText; }
+    .sev--high { --s1: CanvasText; --s2: CanvasText; --s3: CanvasText; }
+    .sev--medium { --s1: CanvasText; --s2: CanvasText; }
+    .sev--low { --s1: CanvasText; }
+
+    .progress {
+      border: 1px solid CanvasText;
+      background: Canvas;
+      forced-color-adjust: none;
+    }
+
+    progress.progress::-webkit-progress-bar {
+      background: Canvas;
+    }
+
+    progress.progress::-webkit-progress-value {
+      background: Highlight;
+    }
+
+    progress.progress::-moz-progress-bar {
+      background: Highlight;
+    }
+
+    /* The spinner's gap would be filled in and it would stop looking like
+       it turns. A contrast theme repaints the hidden label, so here the
+       spinner sits before it instead of over it. */
+    .btn[aria-busy="true"]::before,
+    .spinner {
+      forced-color-adjust: none;
+      border-color: CanvasText;
+      border-inline-end-color: transparent;
+    }
+
+    .btn[aria-busy="true"]::before {
+      position: static;
+      margin: 0;
+    }
+
+    .progress__bar,
+    .rail__item[aria-current="page"]::before,
+    .nav__link[aria-current="page"]::after,
+    .tab[aria-selected="true"]::after,
+    .tab[aria-current="page"]::after,
+    .plan--featured::before {
+      background: Highlight;
+    }
+
+    .skeleton {
+      border: 1px solid GrayText;
+    }
+
+    .data-table tr:is([aria-current="true"], [aria-selected="true"]),
+    .findings > [aria-current="true"] {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+
+    .rail__item[aria-current="page"]:not(:focus-visible),
+    .menu__item:hover:not(:focus-visible) {
+      outline: 1px solid Highlight;
+    }
+
+    /* Checked is a filled option; focus is a separate ring outside it, so
+       a focused checked option shows both. */
+    .segmented input:checked + span {
+      forced-color-adjust: none;
+      border-color: Highlight;
+      background: Highlight;
+      color: HighlightText;
+    }
+
+    .segmented input:focus-visible + span {
+      outline: 2px solid CanvasText;
+      outline-offset: 2px;
+    }
+
+    .pill--running::before {
+      border-color: CanvasText;
+      background: linear-gradient(to bottom, Canvas 50%, CanvasText 50%);
+    }
+
+    /* Signatures */
+    .balance__bar,
+    .balance__fill,
+    .balance__side::before,
+    .watch__tick,
+    .week__days > li,
+    .tape__event::before,
+    .paper__sheet,
+    .console__cursor {
+      forced-color-adjust: none;
+    }
+
+    .balance__bar {
+      outline: 1px solid CanvasText;
+      background: Canvas;
+    }
+
+    .balance__fill {
+      border-color: Canvas;
+      background: Highlight;
+    }
+
+    .balance__side::before {
+      background: Highlight;
+    }
+
+    .balance__side--b::before {
+      border-color: CanvasText;
+      background: Canvas;
+    }
+
+    .watch__tick {
+      background: GrayText;
+    }
+
+    /* Worse stays solid, in the text colour, and keeps its pointed top. */
+    .watch__tick--worse {
+      background: CanvasText;
+    }
+
+    .watch__strip {
+      border-bottom-color: CanvasText;
+    }
+
+    .week__days > li {
+      border-color: CanvasText;
+      background: Canvas;
+    }
+
+    .week__days > [data-done] {
+      border-color: Highlight;
+      background: Highlight;
+    }
+
+    .tape__event::before {
+      background: CanvasText;
+    }
+
+    .tape__event--mark::before {
+      background: Highlight;
+    }
+
+    .evidence__line--hit {
+      border-inline-start: 2px solid Highlight;
+    }
+
+    /* Chosen is a heavier edge; focus is a separate ring outside it, so a
+       focused chosen page shows both. */
+    .paper[aria-pressed="true"] .paper__sheet,
+    .paper[aria-current="page"] .paper__sheet {
+      border: 3px solid Highlight;
+    }
+
+    .paper:focus-visible .paper__sheet {
+      outline: 2px solid CanvasText;
+      outline-offset: 3px;
+    }
+
+    .console__cursor {
+      background: CanvasText;
+    }
+
+    .dialog,
+    .toast,
+    .menu,
+    .tooltip,
+    .card,
+    .code,
+    .data-table-wrap {
+      border-color: CanvasText;
+    }
+
+    .btn:disabled,
+    .btn[aria-disabled="true"] {
+      color: GrayText;
+      border-color: GrayText;
+    }
+
+    /* v2.3 parts: hairlines drawn by background or gradient become
+       outlines; chosen states become a Highlight fill. */
+    .cell {
+      outline: 1px solid CanvasText;
+    }
+
+    .plinth,
+    .readout {
+      border: 1px solid CanvasText;
+    }
+
+    .plinth {
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+
+    .readout--current {
+      outline: 2px solid Highlight;
+      outline-offset: -3px;
+    }
+
+    .plinth--grid::before,
+    .plinth--dots::before,
+    .read-progress {
+      display: none;
+    }
+
+    .spot,
+    .tile,
+    .window,
+    .device,
+    .chip,
+    .announce {
+      border-color: CanvasText;
+    }
+
+    .chip[aria-pressed="true"],
+    .chip[aria-current="page"],
+    .chip[aria-current="true"],
+    .code__tab[aria-selected="true"],
+    .walk__step[aria-current="step"],
+    .line[data-hit] {
+      forced-color-adjust: none;
+      border-color: Highlight;
+      background: Highlight;
+      color: HighlightText;
+      box-shadow: none;
+    }
+
+    /* forced-color-adjust is inherited, so a child that sets its own
+       colour (.walk__title is --text) would paint the page's ink on
+       Highlight. Every descendant of a Highlight fill takes HighlightText. */
+    :is(.chip[aria-pressed="true"], .chip[aria-current="page"], .chip[aria-current="true"], .code__tab[aria-selected="true"], .walk__step[aria-current="step"], .line[data-hit]) * {
+      color: inherit;
+    }
+
+    .chip:is([aria-pressed="true"], [aria-current="page"], [aria-current="true"]) .chip__n,
+    .walk__step[aria-current="step"] .walk__n,
+    .line[data-hit]::before {
+      border-color: HighlightText;
+      color: HighlightText;
+    }
+
+    .chip:is([aria-pressed="true"], [aria-current="page"], [aria-current="true"])::before {
+      background: HighlightText;
+    }
+
+    .stages > li::before {
+      forced-color-adjust: none;
+      background: GrayText;
+    }
+
+    .stages > [data-state="done"]::before {
+      background: CanvasText;
+    }
+
+    .stages > [aria-current="step"]::before {
+      background: Highlight;
+    }
+
+    .meter__bar {
+      forced-color-adjust: none;
+      border: 1px solid CanvasText;
+      background: Canvas;
+    }
+
+    .meter__bar::-webkit-meter-bar {
+      background: Canvas;
+    }
+
+    .meter__bar::-webkit-meter-optimum-value,
+    .meter__bar::-webkit-meter-suboptimum-value,
+    .meter__bar::-webkit-meter-even-less-good-value {
+      background: Highlight;
+    }
+
+    .meter__bar::-moz-meter-bar {
+      background: Highlight;
+    }
+
+    :where(.legal__toc) a:not(.btn) {
+      forced-color-adjust: none;
+      border-inline-start-color: Canvas;
+      color: LinkText;
+    }
+
+    :where(.legal__toc) a[aria-current="location"]:not(.btn) {
+      border-inline-start-color: Highlight;
+      color: CanvasText;
+    }
+  }
+
+  /* Paper is always light, and carries only what reads on paper. */
+  @media print {
+    /* Wins over the theme switches because this layer comes later. */
+    :root,
+    [data-theme] {
+      --qt-light: initial;
+      --qt-dark: ;
+      color-scheme: light;
+    }
+
+    body {
+      min-height: 0;
+      background: none;
+      font-size: 11pt;
+      line-height: 1.5;
+    }
+
+    .nav,
+    .shell__bar,
+    .shell__rail,
+    .nav__menu,
+    .skip-link,
+    .code__bar .btn,
+    .copyfield > .btn,
+    .toasts,
+    .tooltip,
+    .menu,
+    [data-no-print] {
+      display: none !important;
+    }
+
+    .shell__grid {
+      display: block;
+    }
+
+    .btn {
+      --btn-bg: transparent;
+      --btn-fg: var(--text);
+      --btn-line: var(--text-3);
+    }
+
+    .pill::before,
+    .note::before,
+    .sev::before,
+    .check input,
+    .switch,
+    .progress,
+    .progress__bar,
+    .plan--featured::before {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .skeleton {
+      display: none;
+    }
+
+    .code {
+      overflow: visible;
+    }
+
+    .code pre,
+    .console {
+      max-height: none;
+      overflow: visible;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .truncate {
+      overflow: visible;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .tabs {
+      flex-wrap: wrap;
+      overflow: visible;
+    }
+
+    .shell {
+      min-height: 0;
+    }
+
+    .section {
+      padding-block: var(--s-8);
+    }
+
+    .data-table-wrap {
+      overflow: visible;
+      background: none;
+    }
+
+    .data-table thead {
+      display: table-header-group;
+    }
+
+    /* A wide table wraps inside the page box instead of being cut off at
+       its edge. */
+    .data-table :is(th, td),
+    .data-table thead th {
+      padding-inline: 0.5rem;
+      white-space: normal;
+      overflow-wrap: anywhere;
+    }
+
+    .balance__bar,
+    .balance__fill,
+    .balance__side::before,
+    .watch__tick,
+    .week__days > li,
+    .paper__sheet {
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .console__cursor {
+      display: none;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4 {
+      break-after: avoid;
+    }
+
+    .card,
+    .plan,
+    .note,
+    .code,
+    .stat,
+    .data-table tr,
+    .steps > li,
+    .kv > div,
+    figure {
+      break-inside: avoid;
+    }
+
+    /* system.js opens every details element before printing; where the
+       engine exposes the content box, CSS shows it too. */
+    @supports selector(::details-content) {
+      details::details-content {
+        content-visibility: visible;
+        display: block;
+      }
+    }
+
+    .prose a[href^="http"]::after {
+      content: " (" attr(href) ")";
+      color: var(--text-2);
+      font-size: 0.85em;
+      overflow-wrap: anywhere;
+    }
+
+    .read-progress,
+    .search__kbd,
+    .plinth::before {
+      display: none;
+    }
+
+    .plinth {
+      padding: 0;
+      background: none;
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+
+    .plinth > :is(.window, .device) {
+      box-shadow: none;
+    }
+
+    .chips {
+      -webkit-mask-image: none;
+      mask-image: none;
+      flex-wrap: wrap;
+      overflow: visible;
+    }
+
+    .tile,
+    .cell,
+    .window,
+    .changelog > li {
+      break-inside: avoid;
+    }
+  }
+}
