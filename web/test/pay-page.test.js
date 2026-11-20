@@ -494,3 +494,24 @@ test("a request that gets no answer is aborted after its time limit, well inside
   globalThis.fetch = async (url, init) => new Response(JSON.stringify({ ok: true }), { status: 200 });
   assert.deepEqual(await page.pay.post("consume", { token: "t" }, { timeoutMs: 30 }), { status: 200, data: { ok: true } });
 });
+
+test("post() with no time limit given, as the pay flow calls it, aborts the request after POST_TIMEOUT_MS", async () => {
+  const { POST_TIMEOUT_MS } = await import("../src/pay-flow.js");
+  const page = await load();
+  globalThis.fetch = (url, init) => new Promise((resolve, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason)));
+  const realSetTimeout = globalThis.setTimeout;
+  const scheduled = [];
+  globalThis.setTimeout = (fn, ms) => {
+    scheduled.push({ fn, ms });
+    return realSetTimeout(() => {}, 0);
+  };
+  let request;
+  try {
+    request = page.pay.post("consume", { token: "t" });
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
+  assert.deepEqual(scheduled.map(({ ms }) => ms), [POST_TIMEOUT_MS]);
+  scheduled[0].fn();
+  await assert.rejects(request);
+});

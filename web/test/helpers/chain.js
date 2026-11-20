@@ -64,8 +64,8 @@ export function paymentTx({
 
 /**
  * An RPC over a list of transactions, oldest first. Like a real node it
- * returns signatures for any address a transaction names, newest first, and
- * hands out a transaction only once it is finalized.
+ * returns signatures for any address a transaction names, newest first, each
+ * with its slot, and hands out a transaction only once it is finalized.
  */
 export function chainRpc(entries = []) {
   const chain = entries.map((entry) => (entry.tx ? entry : { tx: entry }));
@@ -82,6 +82,7 @@ export function chainRpc(entries = []) {
         .filter(({ tx, status }) => status !== "unseen" && tx.transaction.message.accountKeys.some((key) => key.pubkey === address))
         .map(({ tx, status = "finalized" }) => ({
           signature: tx.transaction.signatures[0],
+          slot: tx.slot,
           err: tx.meta.err,
           confirmationStatus: status,
         }))

@@ -2,7 +2,10 @@ import { getStore as netlifyGetStore } from "@netlify/blobs";
 
 /**
  * The payment ledger is append-only: one record per spent transaction,
- * written once and never changed. `create` is the only write. It asks the
+ * written once and never changed. (The operator's refund tool in
+ * web/scripts also records which transfer refunded a payment,
+ * under refund-sent/ and refund-transfer/, the same way; no function reads
+ * those.) `create` is the only write. It asks the
  * store to create the key only if it is absent, and reports whether it did.
  * Whether two concurrent requests can both win therefore depends on the
  * store deciding that atomically:

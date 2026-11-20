@@ -1105,3 +1105,80 @@ test("without Web Locks two tabs that both find no lease and write one at once: 
   assert.deepEqual(server.oks, ["B"]);
   assert.deepEqual(results, [{ ok: false, reason: "elsewhere" }, { ok: true }]);
 });
+
+// ── Round 6: an answer that arrives after another tab took the spend over ─────
+
+test("without Web Locks a tab frozen past its lease, whose consume reached the server, leaves the outcome to the tab that took over: one grind", async () => {
+  const storage = fakeStorage();
+  const clock = { now: 1_000_000 };
+  const server = realServer();
+  const options = { storage, now: () => clock.now, sleep: sharedSleep(clock), locks: null };
+  const B = createPayFlow({ ...options, post: server.post("B") });
+  let b = null;
+  const A = createPayFlow({
+    ...options,
+    post: async (name, body) => {
+      // The token is spent on the server, then the tab freezes before the answer reaches it.
+      const answer = await server.post("A")(name, body);
+      clock.now += LEASE_MS + 1;
+      // Tab B takes the lease and replays the saved token, which the server answers "ok" again.
+      b = await B.unlock({ claim, ...server.issue() });
+      return answer;
+    },
+  });
+  const claim = A.begin();
+  A.markSent(undefined, claim);
+  const a = await A.unlock({ claim, ...server.issue() });
+  assert.deepEqual(b, { ok: true });
+  assert.deepEqual(a, { ok: false, reason: "elsewhere" });
+  assert.equal([a, b].filter((result) => result.ok).length, 1, "one payment, one grind");
+});
+
+test("without Web Locks a fresh token that verify returns after another tab took the lease is neither saved nor spent", async () => {
+  const storage = fakeStorage();
+  const clock = { now: 1_000_000 };
+  const sent = [];
+  const A = createPayFlow({
+    storage,
+    now: () => clock.now,
+    sleep: sharedSleep(clock),
+    locks: null,
+    post: async (name) => {
+      sent.push(name);
+      if (name === "consume") return { status: 401, data: { ok: false, reason: "expired" } };
+      // verify answers after the tab froze past its lease and another tab took the spend over.
+      clock.now += LEASE_MS + 1;
+      storage.setItem(`${SPEND_LOCK}-lease`, JSON.stringify({ owner: "another tab", until: clock.now + LEASE_MS }));
+      return { status: 200, data: { ok: true, token: "fresh", expiresAt: clock.now + 600_000 } };
+    },
+  });
+  const claim = A.begin();
+  A.markSent(undefined, claim);
+  assert.deepEqual(await A.unlock({ claim, token: "stale" }), { ok: false, reason: "elsewhere" });
+  assert.deepEqual(sent, ["consume", "verify"]);
+  assert.equal(A.pending().token, "stale", "the other tab's saved token is left alone");
+});
+
+test("without Web Locks the spend of a fresh token stops when another tab takes the lease while it backs off", async () => {
+  const storage = fakeStorage();
+  const clock = { now: 1_000_000 };
+  const sent = [];
+  const A = createPayFlow({
+    storage,
+    now: () => clock.now,
+    sleep: sharedSleep(clock),
+    locks: null,
+    post: async (name, body) => {
+      sent.push([name, body.token]);
+      if (name === "verify") return { status: 200, data: { ok: true, token: "fresh", expiresAt: clock.now + 600_000 } };
+      if (body.token === "stale") return { status: 401, data: { ok: false, reason: "expired" } };
+      // The fresh token's first consume gets no answer; while the tab waits to retry, another takes over.
+      setImmediate(() => storage.setItem(`${SPEND_LOCK}-lease`, JSON.stringify({ owner: "another tab", until: clock.now + LEASE_MS })));
+      return answers.down;
+    },
+  });
+  const claim = A.begin();
+  A.markSent(undefined, claim);
+  assert.deepEqual(await A.unlock({ claim, token: "stale" }), { ok: false, reason: "elsewhere" });
+  assert.deepEqual(sent.map(([name]) => name), ["consume", "verify", "consume"]);
+});

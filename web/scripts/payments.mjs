@@ -5,24 +5,30 @@
  * version", says when and how to run it.
  *
  *   node web/scripts/payments.mjs check <signature>
- *   node web/scripts/payments.mjs mark-refunded <signature>
+ *   node web/scripts/payments.mjs mark-refunded <signature> [--sent <refund signature>]
  *   node web/scripts/payments.mjs old-payments --until <ISO time> [--since <ISO time>]
  *   node web/scripts/payments.mjs old-sol-payments [--until <ISO time>] [--since <ISO time>]
  *
  * It runs on the operator's machine with the operator's credentials, and
  * nowhere else. It lives outside netlify/functions, so it is never deployed
  * as an endpoint, and the page imports nothing from it. It moves no money and
- * holds no key. The one thing it writes is the refund mark, and only for a
- * payment it has just found unspent.
+ * holds no key. It writes only refund records: the mark that stops a payment
+ * from being used, and which transfer refunded it.
  *
  * Every fact comes from the finalized transaction, the chain's history and
  * the ledger, never from whoever asked for the refund: that it is a payment
- * the page built, the wallet that paid it (where a refund goes), its age,
- * whether a grind or an earlier refund used it, and whether the money already
- * went back by hand.
+ * the page built, the wallet that paid it (where a refund goes), its age, and
+ * whether a grind or an earlier refund used it.
+ *
+ * Where the tool cannot be sure, it says so and asks for a look by hand. It
+ * never tells the operator to send money, or to send nothing, on a guess:
+ * "send nothing" rests on a refund recorded with --sent (or, for the launch
+ * versions' SOL payments, on the one exact pairing the chain allows), and
+ * "send" on a payment with no transfer back to its wallet since it was made.
  */
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import { setTimeout as sleepFor } from "node:timers/promises";
 import { getStore as netlifyGetStore } from "@netlify/blobs";
 import { PublicKey } from "@solana/web3.js";
 import { isAddress, isSignature } from "../netlify/functions/lib/address.js";
@@ -50,22 +56,33 @@ import { associatedTokenAddress } from "../netlify/functions/lib/tx.js";
 export const REFUND_MIN_AGE_MS = 24 * 60 * 60 * 1000;
 
 /**
- * The first moment anything could pay VanityGrinder: 8d35fb7, the launch
- * commit that first took payments, was committed at 2026-11-15T09:37:02-05:00,
- * and a deploy can only follow its commit. Lists go back no further unless
- * told to with --since.
+ * Where old-payments and old-sol-payments start unless told otherwise: 63308b0,
+ * the first commit on any branch with the payment functions, made at
+ * 2026-11-15T14:36:14Z (8d35fb7 merged it 48 seconds later). That is only as
+ * early as the repository can see. A deploy from the command line publishes
+ * the working tree, committed or not, so it can be older than any commit:
+ * DEPLOY.md has the operator check Netlify's deploy list first, and pass an
+ * earlier --since if it goes back further.
  */
-export const LAUNCH_AT = Date.parse("2026-11-15T14:37:02Z");
+export const LAUNCH_AT = Date.parse("2026-11-15T14:36:14Z");
 
 export const REFUNDABLE = "REFUNDABLE";
 /** Unlocked a grind: spent/<signature> in this version, or an old record that says consumed. */
 export const USED = "USED";
-/** spent/<signature> already holds a refund mark. */
+/** Marked refunded, and the transfer that refunded it is recorded (--sent). Send nothing. */
 export const REFUNDED = "REFUNDED";
+/** Marked refunded, but no refund transfer is recorded for it: sent and not recorded, or never sent. */
+export const MARKED = "MARKED";
 /**
- * Unspent and unmarked, but exactly the price already went back from the
- * payee to the wallet that paid, after the payment: refunded by hand. Send
- * nothing; mark-refunded records it.
+ * Unused and unmarked, but money went from the payee to the wallet that paid
+ * after the payment, and no record says which payment that transfer refunded.
+ * Never sent anything, never told to send nothing: decided by hand.
+ */
+export const MAYBE_REFUNDED = "MAYBE_REFUNDED";
+/**
+ * A launch-day SOL payment whose money went back: the wallet's only SOL
+ * payment, and exactly its lamports went from the payee to that wallet after
+ * it, once. Send nothing.
  */
 export const SENT_BACK = "SENT_BACK";
 /**
@@ -77,11 +94,18 @@ export const NOT_A_PAYMENT = "NOT_A_PAYMENT";
 /** A payment, unspent, but less than REFUND_MIN_AGE_MS old. */
 export const TOO_RECENT = "TOO_RECENT";
 /**
- * A payment the tool cannot settle: no single wallet paid it, it has no
- * time, or the ledger holds a record under one of its accounts that the old
- * version could not have written. Never marked by this tool.
+ * A payment the tool cannot settle: no single wallet paid it, it has no time
+ * or slot, the ledger holds a record under one of its accounts that the old
+ * version could not have written, or a transaction it needs is not final yet.
+ * Never marked by this tool.
  */
 export const UNCLEAR = "UNCLEAR";
+/**
+ * SOL that reached the payee from someone else, naming a reference, in a
+ * transaction that is not exactly what the launch versions built. Maybe a
+ * payment, maybe not: decided by hand, never refunded on the tool's word.
+ */
+export const UNCLASSIFIED = "UNCLASSIFIED";
 
 /** A mistake in how the tool was run: wrong arguments or missing settings. Exit code 2. */
 export class UsageError extends Error {
@@ -93,6 +117,20 @@ export class UsageError extends Error {
 
 const STORE_LOOKUPS_AT_ONCE = 16;
 const PROGRAMS = new Set([SYSTEM_PROGRAM_ID, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID]);
+const COMPUTE_BUDGET_PROGRAM_ID = "ComputeBudget111111111111111111111111111111";
+
+/**
+ * $1 in SOL as the launch versions could have asked it: their quote was
+ * 1e9 / (SOL price in USD) lamports, and the repository does not hold the
+ * day's price. This is $1 at any price from $50 to $1,000 a SOL. A SOL payment
+ * outside it is not one they asked for, and is UNCLASSIFIED.
+ */
+export const LAUNCH_SOL_LAMPORTS = Object.freeze({ min: 1_000_000, max: 20_000_000 });
+
+/** Ledger key of the transfer recorded as a payment's refund: refund-sent/<payment> -> { transfer, at }. */
+export const refundSentKey = (payment) => `refund-sent/${payment}`;
+/** Ledger key of the payment a transfer refunded: refund-transfer/<transfer> -> { payment, at }. One payment per transfer. */
+export const refundTransferKey = (transfer) => `refund-transfer/${transfer}`;
 
 const NOT_A_PAYMENT_WHY = {
   malformed: "the node's record of it is not a readable finalized transaction",
@@ -185,8 +223,8 @@ export function findPayer(tx, { payTo }) {
 
 /**
  * Accounts the transaction names that could be its reference: read-only,
- * not signers, and none of the programs, the mint or the payee. For the
- * report only. The ledger is searched under every account it names.
+ * not signers, and none of the programs, the mint, a sysvar or the payee.
+ * For the report only. The ledger is searched under every account it names.
  */
 export function referenceCandidates(tx, { payTo }) {
   const message = tx?.transaction?.message;
@@ -222,116 +260,86 @@ function usdcChangeByOwner(tx) {
   return change;
 }
 
-/** A successful transaction that moves exactly the price from the payee to `payer`. */
+/**
+ * A refund as --sent records it: a successful transaction in which the payee
+ * loses exactly the price in USDC, `payer` gains exactly the price, and no
+ * other wallet's USDC moves.
+ */
 export function isUsdcRefund(tx, { payTo, payer }) {
-  if (tx?.meta?.err !== null) return false;
+  if (!isPlainObject(tx?.meta) || tx.meta.err !== null) return false;
   const change = usdcChangeByOwner(tx);
-  return change !== null && change.get(payTo) === -USDC_BASE_UNITS && change.get(payer) === USDC_BASE_UNITS;
+  if (change === null || change.get(payTo) !== -USDC_BASE_UNITS || change.get(payer) !== USDC_BASE_UNITS) return false;
+  return [...change].every(([owner, delta]) => owner === payTo || owner === payer || delta === 0n);
 }
 
 /**
- * Pair payments with the transfers that sent their money back. `events` are
- * one wallet's unused payments and its refunds, oldest first; a refund has
- * `at`, its time in ms (null if unknown), and a payment marked refunded has
- * `markedAt` and, when it was marked after a refund by hand, `sentIn`, that
- * refund. A marked payment takes the refund its mark names; otherwise, since
- * the runbook marks first and sends second, the first refund at or after its
- * mark. Every other refund goes to the oldest unmarked payment before it that
- * no refund answered yet. Returns payment signature -> refund signature.
+ * Reads the chain for one run of the tool. Each account's history is listed
+ * once, newest first, and only as far back as some payment needs; each
+ * transaction is fetched once.
  */
-function pairRefunds(events) {
-  const paired = new Map();
-  const taken = new Set();
-  for (const event of events) {
-    if (event.kind !== "payment" || !event.sentIn) continue;
-    if (!events.some((other) => other.kind === "refund" && other.signature === event.sentIn)) continue;
-    taken.add(event.sentIn);
-    paired.set(event.signature, event.sentIn);
-  }
-  events.forEach((event, i) => {
-    if (event.kind !== "payment" || event.markedAt == null || paired.has(event.signature)) return;
-    const refund = events.find((other, j) => j > i && other.kind === "refund" && !taken.has(other.signature) && other.at !== null && other.at >= event.markedAt);
-    if (!refund) return;
-    taken.add(refund.signature);
-    paired.set(event.signature, refund.signature);
-  });
-  const waiting = [];
-  for (const event of events) {
-    if (event.kind === "payment") {
-      if (event.markedAt == null) waiting.push(event.signature);
-    } else if (!taken.has(event.signature) && waiting.length > 0) {
-      paired.set(waiting.shift(), event.signature);
-    }
-  }
-  return paired;
-}
-
-/** Every row the node lists for `address`, newest first, down to the first one older than `since`. */
-async function* history(rpc, address, since) {
-  let before;
-  for (;;) {
-    const rows = await rpc.getSignaturesForAddress(address, before === undefined ? {} : { before });
-    for (const row of rows) {
-      if (since !== undefined && Number.isSafeInteger(row.blockTime) && row.blockTime * 1000 < since) return;
-      yield row;
-    }
-    if (rows.length < SIGNATURE_LIMIT) return;
-    before = rows[rows.length - 1].signature;
-  }
+function chainReader(rpc) {
+  const listings = new Map();
+  const transactions = new Map();
+  return {
+    /** The rows for `account` in `slot` or later, newest first. A row with no slot is kept: it cannot be placed. */
+    async rowsFrom(account, slot) {
+      let listing = listings.get(account);
+      if (!listing) listings.set(account, (listing = { rows: [], before: undefined, done: false }));
+      const reached = () => {
+        const last = listing.rows.at(-1);
+        return last !== undefined && Number.isSafeInteger(last.slot) && last.slot < slot;
+      };
+      while (!listing.done && !reached()) {
+        const page = await rpc.getSignaturesForAddress(account, listing.before === undefined ? {} : { before: listing.before });
+        listing.rows.push(...page);
+        if (page.length < SIGNATURE_LIMIT) listing.done = true;
+        else listing.before = page.at(-1).signature;
+      }
+      return listing.rows.filter((row) => !(Number.isSafeInteger(row.slot) && row.slot < slot));
+    },
+    transaction(signature) {
+      if (!transactions.has(signature)) transactions.set(signature, rpc.getTransaction(signature));
+      return transactions.get(signature);
+    },
+  };
 }
 
 /**
- * For one paying wallet: which of its payments already got their money back
- * by hand. Reads the history of the account that paid and of the wallet's
- * USDC associated account (where a transfer to the wallet lands), from
- * `since` on: the wallet's payments that nothing used, and every transfer of
- * exactly the price from the payee to the wallet, paired oldest first. A
- * payment marked refunded takes its refund like any other.
+ * Every transfer of USDC, of any amount, from the payee to the wallet that
+ * paid, landed in the payment's slot or later, that is not recorded as the
+ * refund of some payment. Reads the history of the account that paid and of
+ * the wallet's USDC associated account (where a transfer to the wallet lands)
+ * from now back to the payment's slot; nothing older is listed or read.
+ * `pending`: transactions of those accounts that are not final yet, so cannot
+ * be read; `unreadable`: ones whose token balances cannot be read.
  */
-async function refundsSentBack({ rpc, store, payTo, payer, accounts, since }) {
-  const seen = new Set();
-  const rows = [];
-  for (const account of new Set(accounts.filter(Boolean))) {
-    for await (const row of history(rpc, account, since)) {
+async function transfersBack({ reader, store, payTo, report, slot }) {
+  const found = { transfers: [], pending: [], unreadable: [] };
+  const seen = new Set([report.signature]);
+  for (const account of new Set([report.payerAccount, payeeUsdcAccount(report.payer)])) {
+    for (const row of await reader.rowsFrom(account, slot)) {
       if (seen.has(row.signature)) continue;
       seen.add(row.signature);
-      rows.push(row);
+      if (row.err !== null) continue;
+      const tx = await reader.transaction(row.signature);
+      if (tx === null) {
+        found.pending.push(row.signature);
+        continue;
+      }
+      if (tx.meta?.err !== null) continue;
+      const change = usdcChangeByOwner(tx);
+      if (change === null) {
+        found.unreadable.push(row.signature);
+        continue;
+      }
+      const gained = change.get(report.payer) ?? 0n;
+      if (!((change.get(payTo) ?? 0n) < 0n && gained > 0n)) continue;
+      // Recorded as some payment's refund: that payment's, whichever it is.
+      if ((await store.get(refundTransferKey(row.signature))) !== null) continue;
+      found.transfers.push({ signature: row.signature, amount: gained });
     }
   }
-  // Oldest first. Rows of two accounts are ordered by slot; one account's rows keep the node's order.
-  rows.reverse();
-  rows.sort((a, b) => (Number.isSafeInteger(a.slot) && Number.isSafeInteger(b.slot) ? a.slot - b.slot : 0));
-  const events = [];
-  for (const row of rows) {
-    if (row.err !== null) continue;
-    const tx = await rpc.getTransaction(row.signature);
-    if (tx === null) continue;
-    if (isUsdcRefund(tx, { payTo, payer })) {
-      events.push({ kind: "refund", signature: row.signature, at: Number.isSafeInteger(tx.blockTime) ? tx.blockTime * 1000 : null });
-      continue;
-    }
-    if (!assessPayment(tx, { payTo, signature: row.signature }).ok) continue;
-    if (referenceCandidates(tx, { payTo }).length === 0) continue;
-    if (findPayer(tx, { payTo }).payer !== payer) continue;
-    const ledger = await readLedger(store, row.signature, tx.transaction.message.accountKeys.map(pubkeyOf));
-    // Used for a grind, or not readable as anything: no refund is owed it, so none is paired with it.
-    if (ledger.spent?.state === "used" || ledger.oldState === "consumed" || ledger.oldState === "unreadable") continue;
-    const marked = ledger.spent?.state === "refunded";
-    events.push({ kind: "payment", signature: row.signature, markedAt: marked ? (ledger.spent.at ?? 0) : null, sentIn: marked ? ledger.spent.sentBack : null });
-  }
-  return pairRefunds(events);
-}
-
-/** A lookup of hand refunds that reads each paying wallet's history once. */
-function sentBackLookup({ rpc, store, payTo, since }) {
-  const byPayer = new Map();
-  return (report) => {
-    if (!byPayer.has(report.payer)) {
-      const ata = payeeUsdcAccount(report.payer); // the payer's own USDC associated account
-      byPayer.set(report.payer, refundsSentBack({ rpc, store, payTo, payer: report.payer, accounts: [report.payerAccount, ata], since }));
-    }
-    return byPayer.get(report.payer).then((paired) => paired.get(report.signature) ?? null);
-  };
+  return found;
 }
 
 /**
@@ -361,9 +369,10 @@ function oldStateOf(records) {
 
 /**
  * What the ledger says about the payment: spent/<signature>, which this
- * version writes once (a grind, or a refund mark), and every old-version
- * record under any account the transaction names. The old verify accepted
- * any address as a reference, so a record may sit under any of them.
+ * version writes once (a grind, or a refund mark); the refund transfer
+ * recorded for it, if any; and every old-version record under any account
+ * the transaction names. The old verify accepted any address as a reference,
+ * so a record may sit under any of them.
  */
 async function readLedger(store, signature, keys) {
   const record = await store.get(spentKey(signature));
@@ -373,9 +382,10 @@ async function readLedger(store, signature, keys) {
       state: record?.refunded === true ? "refunded" : "used",
       at: Number.isSafeInteger(record?.at) ? record.at : null,
       payer: typeof record?.payer === "string" ? record.payer : null,
-      sentBack: isSignature(record?.sentBack) ? record.sentBack : null,
     };
   }
+  const sent = await store.get(refundSentKey(signature));
+  const recorded = isSignature(sent?.transfer) ? sent.transfer : null;
   const unique = [...new Set(keys)];
   const old = [];
   for (let start = 0; start < unique.length; start += STORE_LOOKUPS_AT_ONCE) {
@@ -385,11 +395,13 @@ async function readLedger(store, signature, keys) {
       if (value !== null) old.push(describeOldRecord(batch[i], value, signature));
     });
   }
-  return { spent, old, oldState: oldStateOf(old) };
+  return { spent, recorded, old, oldState: oldStateOf(old) };
 }
 
+const listTransfers = (transfers) => transfers.map(({ signature, amount }) => `${signature} (${formatUsdc(amount)} USDC)`).join(", ");
+
 /** The report and verdict for a transaction already read at finalized (null when there is none). */
-async function inspect({ tx, signature, store, payTo, now, sentBack = async () => null }) {
+async function inspect({ tx, signature, store, payTo, now, reader }) {
   const report = {
     signature,
     finalized: tx !== null,
@@ -400,9 +412,11 @@ async function inspect({ tx, signature, store, payTo, now, sentBack = async () =
     payerAccount: null,
     payerWhy: null,
     references: [],
-    sentBack: null,
     blockTime: null,
+    slot: null,
     spent: null,
+    recorded: null,
+    transfersBack: [],
     old: [],
     oldState: null,
     verdict: null,
@@ -414,6 +428,7 @@ async function inspect({ tx, signature, store, payTo, now, sentBack = async () =
   }
   report.succeeded = isPlainObject(tx.meta) && "err" in tx.meta ? tx.meta.err === null : null;
   report.blockTime = Number.isSafeInteger(tx.blockTime) ? tx.blockTime : null;
+  report.slot = Number.isSafeInteger(tx.slot) ? tx.slot : null;
   const payment = assessPayment(tx, { payTo, signature });
   report.pays = payment.ok;
   if (!payment.ok) {
@@ -431,8 +446,30 @@ async function inspect({ tx, signature, store, payTo, now, sentBack = async () =
   Object.assign(report, { payer: payer.payer, payerAccount: payer.account, payerWhy: payer.why });
   const ledger = await readLedger(store, signature, tx.transaction.message.accountKeys.map(pubkeyOf));
   Object.assign(report, ledger);
+  const lookBack = async () => {
+    const found = await transfersBack({ reader, store, payTo, report, slot: report.slot });
+    report.transfersBack = found.transfers.map(({ signature: transfer, amount }) => ({ signature: transfer, amount }));
+    return found;
+  };
 
-  if (ledger.spent?.state === "refunded") return settle(REFUNDED, "spent/<signature> already marks it refunded");
+  if (ledger.spent?.state === "refunded") {
+    if (ledger.recorded) return settle(REFUNDED, `marked refunded, and ${ledger.recorded} is recorded as its refund. Send nothing`);
+    const unrecorded = "marked refunded, but no refund transfer is recorded for it";
+    if (!payer.payer || report.slot === null) {
+      return settle(MARKED, `${unrecorded}, and the tool cannot look for one (${payer.payer ? "the node gave no slot for it" : payer.why}): look by hand`);
+    }
+    const found = await lookBack();
+    if (found.pending.length > 0 || found.unreadable.length > 0) {
+      return settle(MARKED, `${unrecorded}, and ${[...found.pending, ...found.unreadable].join(", ")}, of the wallet that paid, cannot be read yet: check again in a minute`);
+    }
+    if (found.transfers.length > 0) {
+      return settle(
+        MARKED,
+        `${unrecorded}. Since the payment the payee sent the wallet that paid ${listTransfers(found.transfers)}: if one is its refund, record it with --sent; if none is, send the refund and record that`
+      );
+    }
+    return settle(MARKED, `${unrecorded}, and nothing went to the wallet that paid since the payment: send the refund, then record it with --sent`);
+  }
   if (ledger.spent) return settle(USED, "spent/<signature> records that it unlocked a grind");
   if (ledger.oldState === "consumed") return settle(USED, "the old version's record says it unlocked a grind");
   if (ledger.oldState === "unreadable") {
@@ -440,55 +477,108 @@ async function inspect({ tx, signature, store, payTo, now, sentBack = async () =
   }
   if (!payer.payer) return settle(UNCLEAR, `there is no single wallet to refund: ${payer.why}`);
   if (report.blockTime === null) return settle(UNCLEAR, "the node gave no time for it, so its age is unknown");
-  report.sentBack = await sentBack(report);
-  if (report.sentBack) {
-    return settle(
-      SENT_BACK,
-      `exactly ${formatUsdc(USDC_BASE_UNITS)} USDC already went back from the payee to the wallet that paid, in ${report.sentBack}: it was refunded by hand. Send nothing`
-    );
-  }
+  if (report.slot === null) return settle(UNCLEAR, "the node gave no slot for it, so nothing can be placed after it");
   const eligibleAt = report.blockTime * 1000 + REFUND_MIN_AGE_MS;
   if (now < eligibleAt) {
     return settle(TOO_RECENT, `unspent, but it may be refunded only from ${new Date(eligibleAt).toISOString()}, 24 hours after it was paid`);
   }
-  return settle(REFUNDABLE, "a payment nothing has used, at least 24 hours old");
+  const found = await lookBack();
+  if (found.pending.length > 0) {
+    return settle(UNCLEAR, `a transaction of the wallet that paid, after the payment, is not final yet (${found.pending.join(", ")}), so whether money already went back is not known: check again in a minute`);
+  }
+  if (found.unreadable.length > 0) {
+    return settle(UNCLEAR, `the token balances of ${found.unreadable.join(", ")}, a transaction of the wallet that paid after the payment, cannot be read, so whether money already went back is not known`);
+  }
+  if (found.transfers.length > 0) {
+    return settle(
+      MAYBE_REFUNDED,
+      `nothing used it, but since the payment the payee sent the wallet that paid ${listTransfers(found.transfers)}, and no record says which payment that refunded. Decide by hand: if one is this payment's refund, record it with mark-refunded <signature> --sent <that transfer>; if none is, send the refund and record it the same way`
+    );
+  }
+  return settle(REFUNDABLE, "a payment nothing has used, at least 24 hours old, and nothing went back to its wallet since");
 }
 
 /** Read the finalized transaction and the ledger, and give one verdict. Writes nothing. */
-export async function checkPayment({ rpc, store, now, payTo, signature }) {
+export async function checkPayment({ rpc, store, now, payTo, signature, reader = chainReader(rpc) }) {
   if (!isSignature(signature)) throw new UsageError("That is not a transaction signature.");
-  const tx = await rpc.getTransaction(signature);
-  return inspect({ tx, signature, store, payTo, now, sentBack: sentBackLookup({ rpc, store, payTo, since: LAUNCH_AT }) });
+  const tx = await reader.transaction(signature);
+  return inspect({ tx, signature, store, payTo, now, reader });
+}
+
+/** Why `transfer` (read at finalized) cannot be recorded as the refund of `report`'s payment, or null if it can. */
+function refundProblem(transfer, report, payTo) {
+  if (transfer === null) return "no finalized transaction has that signature: if it was just sent, wait a minute and run this again";
+  if (!isUsdcRefund(transfer, { payTo, payer: report.payer })) {
+    return `it does not move exactly ${formatUsdc(USDC_BASE_UNITS)} USDC from the payee to ${report.payer}, and nothing else`;
+  }
+  if (!Number.isSafeInteger(transfer.slot) || !(transfer.slot > report.slot)) return "it did not land after the payment";
+  return null;
 }
 
 /**
  * Mark a payment refunded, so nothing can redeem it, and name the wallet to
- * send the refund to. Checks first and refuses anything but REFUNDABLE, and
- * SENT_BACK: a payment already refunded by hand is marked so it cannot be
- * used too, and `alreadySent` names the transfer, so nothing is sent again. The
+ * send the refund to. Checks first and refuses anything but REFUNDABLE. The
  * mark is spent/<signature>, written with the same conditional create that
  * spends a payment for a grind: if anything wrote it since the check (a grind,
- * another refund), the create fails and so does this.
+ * another refund), the create fails and so does this. Marking comes before the
+ * refund is sent: once marked, verify and consume answer 409 "refunded" for
+ * the payment, so it cannot be both refunded and used.
  *
- * Marking comes before the refund is sent. Once marked, verify and consume
- * answer 409 "refunded" for the payment, so it cannot be both refunded and
- * used.
+ * With `sent`, records that transfer as the payment's refund, once it has
+ * been sent: for a payment it marked (MARKED), or one whose money went back
+ * by hand (MAYBE_REFUNDED, REFUNDABLE), which it marks first. The transfer
+ * must be a finalized refund of exactly the price from the payee to the
+ * wallet that paid, landed after the payment, and not already recorded for
+ * another payment: refund-transfer/<transfer> is created once, so one transfer
+ * answers one payment. That record, never a time or a guess, is what makes a
+ * later check say "send nothing".
  */
-export async function markRefunded({ rpc, store, now, payTo, signature }) {
-  const report = await checkPayment({ rpc, store, now, payTo, signature });
-  if (report.verdict !== REFUNDABLE && report.verdict !== SENT_BACK) {
-    return { marked: false, report, why: `the verdict is ${report.verdict}, not ${REFUNDABLE} or ${SENT_BACK}` };
+export async function markRefunded({ rpc, store, now, payTo, signature, sent, reader = chainReader(rpc) }) {
+  const report = await checkPayment({ rpc, store, now, payTo, signature, reader });
+  const refuse = (why) => ({ marked: false, recorded: null, report, why });
+  if (sent === undefined) {
+    if (report.verdict !== REFUNDABLE) return refuse(`the verdict is ${report.verdict}, not ${REFUNDABLE}`);
+    if (!(await store.create(spentKey(signature), { refunded: true, at: now, payer: report.payer }))) {
+      return refuse("spent/<signature> was written by something else between the check and the mark. Nothing was marked: run check again");
+    }
+    return { marked: true, recorded: null, report, payer: report.payer, account: report.payerAccount };
   }
-  const mark = { refunded: true, at: now, payer: report.payer, ...(report.sentBack ? { sentBack: report.sentBack } : {}) };
-  const created = await store.create(spentKey(signature), mark);
-  if (!created) {
-    return {
-      marked: false,
-      report,
-      why: "spent/<signature> was written by something else between the check and the mark. Nothing was marked: run check again",
-    };
+
+  if (!isSignature(sent)) throw new UsageError("--sent takes the refund's transaction signature.");
+  if (report.verdict === REFUNDED) {
+    if (report.recorded === sent) return { marked: false, recorded: sent, already: true, report, why: "that transfer is already recorded as its refund" };
+    return refuse(`another transfer, ${report.recorded}, is already recorded as its refund`);
   }
-  return { marked: true, report, payer: report.payer, account: report.payerAccount, alreadySent: report.sentBack };
+  if (![REFUNDABLE, MAYBE_REFUNDED, MARKED].includes(report.verdict)) {
+    return refuse(`the verdict is ${report.verdict}: a refund is recorded only for ${REFUNDABLE}, ${MAYBE_REFUNDED} or ${MARKED}`);
+  }
+  const problem = refundProblem(await reader.transaction(sent), report, payTo);
+  if (problem) return refuse(`${sent} cannot be its refund: ${problem}. Nothing was written`);
+  const holder = await store.get(refundTransferKey(sent));
+  if (holder !== null && holder?.payment !== signature) {
+    return refuse(`${sent} is already recorded as the refund of ${holder?.payment ?? "another payment"}. Nothing was written`);
+  }
+
+  let marked = false;
+  if (report.verdict !== MARKED) {
+    if (!(await store.create(spentKey(signature), { refunded: true, at: now, payer: report.payer }))) {
+      return refuse("spent/<signature> was written by something else between the check and the mark. Nothing was written: run check again");
+    }
+    marked = true;
+  }
+  if (!(await store.create(refundTransferKey(sent), { payment: signature, at: now }))) {
+    const taken = await store.get(refundTransferKey(sent));
+    if (taken?.payment !== signature) {
+      return { marked, recorded: null, report, why: `${sent} was recorded as the refund of ${taken?.payment ?? "another payment"} meanwhile. The payment is marked; its refund is not recorded: run check` };
+    }
+  }
+  if (!(await store.create(refundSentKey(signature), { transfer: sent, at: now }))) {
+    const first = await store.get(refundSentKey(signature));
+    if (first?.transfer !== sent) {
+      return { marked, recorded: sent, report, why: `${first?.transfer ?? "another transfer"} was recorded as its refund meanwhile, so it was refunded twice: ${sent} is recorded as one of them` };
+    }
+  }
+  return { marked, recorded: sent, report, payer: report.payer, account: report.payerAccount };
 }
 
 /**
@@ -500,6 +590,8 @@ export async function markRefunded({ rpc, store, now, payTo, signature }) {
  * in between is read; those that pay exactly 1.00 USDC to the payee are
  * yielded with their verdict. A listed transaction that cannot be read or
  * dated is yielded as UNCLEAR rather than skipped. Holds one page at a time.
+ * `since` and `until` choose what is listed, nothing else: each payment's
+ * verdict reads the chain from the payment to now, whatever they are.
  *
  * The chain is the list, not the ledger: the old version wrote a record only
  * once its verify succeeded, so a customer whose page gave up, or who closed
@@ -511,7 +603,7 @@ export async function* oldPayments({ rpc, store, now, payTo, until, since = LAUN
   if (until > now) throw new UsageError("--until is later than now. Run this after publishing, with --until set to the publish time.");
   if (!(since < until)) throw new UsageError("--since must be earlier than --until.");
   const unclear = (signature, why) => ({ signature, blockTime: null, payer: null, oldState: null, verdict: UNCLEAR, why });
-  const sentBack = sentBackLookup({ rpc, store, payTo, since });
+  const reader = chainReader(rpc);
 
   let before;
   for (;;) {
@@ -525,13 +617,27 @@ export async function* oldPayments({ rpc, store, now, payTo, until, since = LAUN
       if (time >= until) continue;
       if (time < since) return;
       if (row.err !== null) continue;
-      const tx = await rpc.getTransaction(row.signature);
-      const report = await inspect({ tx, signature: row.signature, store, payTo, now, sentBack });
+      const tx = await reader.transaction(row.signature);
+      const report = await inspect({ tx, signature: row.signature, store, payTo, now, reader });
       if (report.verdict !== NOT_A_PAYMENT) {
         yield report;
       } else if (tx === null || report.reason === "malformed") {
         yield { ...report, verdict: UNCLEAR, why: `listed on the payee's account, but ${report.why}` };
       }
+    }
+    if (rows.length < SIGNATURE_LIMIT) return;
+    before = rows[rows.length - 1].signature;
+  }
+}
+
+/** Every row the node lists for `address`, newest first, down to the first one older than `since`. */
+async function* history(rpc, address, since) {
+  let before;
+  for (;;) {
+    const rows = await rpc.getSignaturesForAddress(address, before === undefined ? {} : { before });
+    for (const row of rows) {
+      if (Number.isSafeInteger(row.blockTime) && row.blockTime * 1000 < since) return;
+      yield row;
     }
     if (rows.length < SIGNATURE_LIMIT) return;
     before = rows[rows.length - 1].signature;
@@ -556,72 +662,192 @@ function lamportChanges(tx) {
   return change;
 }
 
-const SOL = (lamports) => `${Math.floor(lamports / 1e9)}.${String(lamports % 1e9).padStart(9, "0")}`;
+/** The top-level SystemProgram transfers of a jsonParsed transaction: { source, destination, lamports }. */
+function systemTransfers(tx) {
+  const instructions = tx?.transaction?.message?.instructions;
+  if (!Array.isArray(instructions)) return [];
+  return instructions
+    .filter((ix) => ix?.programId === SYSTEM_PROGRAM_ID && ix?.parsed?.type === "transfer")
+    .map((ix) => ix.parsed.info)
+    .filter((info) => isAddress(info?.source) && isAddress(info?.destination) && Number.isSafeInteger(info?.lamports) && info.lamports > 0)
+    .map(({ source, destination, lamports }) => ({ source, destination, lamports }));
+}
+
+const SOL = (lamports) => (Number.isSafeInteger(lamports) ? `${Math.floor(lamports / 1e9)}.${String(lamports % 1e9).padStart(9, "0")}` : "unknown");
+
+/**
+ * Whether a successful transaction is SOL paid to the payee, measured
+ * against what the launch versions built (8d35fb7 tx.js
+ * buildUnsignedTransaction, and the wallet a Solana Pay link opened): one
+ * SystemProgram transfer from the wallet that signed and paid the fee to the
+ * payee, with one read-only reference account added to it, ComputeBudget
+ * instructions at most beside it, of about $1.
+ *
+ * null: not SOL paid by someone else naming a reference, so not listed at
+ * all. That is everything the payee signed itself (a swap, an unstake, a
+ * transfer of its own), everything with no top-level transfer to the payee,
+ * and plain transfers that name no reference (tips). Otherwise
+ * `{ payer, lamports, problem }`, where `problem` is null for exactly the
+ * launch shape and otherwise says how it differs: UNCLASSIFIED.
+ */
+export function solPayment(tx, { payTo }) {
+  const keys = tx?.transaction?.message?.accountKeys;
+  if (!Array.isArray(keys) || keys.length === 0) return null;
+  const payee = keys.find((key) => pubkeyOf(key) === payTo);
+  if (!payee || payee.signer !== false) return null;
+  const transfers = systemTransfers(tx).filter((transfer) => transfer.destination === payTo);
+  if (transfers.length === 0 || transfers.some((transfer) => transfer.source === payTo)) return null;
+  const references = referenceCandidates(tx, { payTo });
+  if (references.length === 0) return null;
+
+  const [{ source }] = transfers;
+  const lamports = transfers.reduce((sum, transfer) => sum + transfer.lamports, 0);
+  const result = (problem) => ({ payer: source, lamports, problem });
+  if (transfers.length !== 1) return result("it pays the payee in more than one transfer");
+  const feePayer = keys[0];
+  if (pubkeyOf(feePayer) !== source || feePayer.signer !== true) return result("the SOL did not come from the wallet that signed it and paid its fee");
+  const others = tx.transaction.message.instructions.filter(
+    (ix) => !(ix?.programId === SYSTEM_PROGRAM_ID && ix?.parsed?.type === "transfer") && ix?.programId !== COMPUTE_BUDGET_PROGRAM_ID
+  );
+  if (others.length > 0) return result(`it runs more than a transfer: ${[...new Set(others.map((ix) => ix?.programId ?? "unknown"))].join(", ")}`);
+  const inner = tx.meta?.innerInstructions;
+  if (!Array.isArray(inner) || inner.some((set) => !Array.isArray(set?.instructions) || set.instructions.length > 0)) {
+    return result("it calls other programs from within, or its inner instructions are unreadable");
+  }
+  if (references.length !== 1) return result(`it names ${references.length} accounts that could be its reference; the launch versions named one`);
+  const expected = new Set([source, payTo, references[0], SYSTEM_PROGRAM_ID, COMPUTE_BUDGET_PROGRAM_ID]);
+  if (keys.some((key) => !expected.has(pubkeyOf(key)))) return result("it names accounts the launch versions never added");
+  const change = lamportChanges(tx);
+  const moved = change && [...change].every(([address, delta]) => delta === (address === source ? -lamports : address === payTo ? lamports : 0));
+  if (!moved) return result("SOL moved other than by the transfer");
+  if (lamports < LAUNCH_SOL_LAMPORTS.min || lamports > LAUNCH_SOL_LAMPORTS.max) {
+    return result(`${SOL(lamports)} SOL is not about $1, what the launch versions asked`);
+  }
+  return result(null);
+}
 
 /**
  * SOL payments taken by the launch versions (8d35fb7 to 7ec217c, the morning
  * of 2026-11-15, before 9b2480c charged USDC only), none of which this version
- * can redeem. A SOL payment was a SystemProgram transfer to the payee wallet
- * with a read-only reference account; its old verify wrote
- * `reference -> { status: "paid", asset: "sol", signature }`, its consume
+ * can redeem. Their old verify wrote
+ * `reference -> { status: "paid", asset: "sol", signature }`, and their consume
  * changed the status to "consumed".
  *
- * Reads the payee wallet's history from now back to `since` (LAUNCH_AT by
- * default). Yields every successful transaction before `until` after which
- * the payee holds more SOL and that names a reference: the lamports paid, the
- * wallet that paid them (the one account whose SOL fell by exactly that
- * much, fees aside), the old record, and a verdict. USED: the old record
- * says consumed. SENT_BACK: exactly those lamports later went from the payee
- * to that wallet. REFUNDABLE: neither. UNCLEAR: no single wallet paid it.
+ * Reads the payee wallet's history from now back to the earlier of `since`
+ * and LAUNCH_AT, and yields each SOL payment (solPayment) made from `since` to
+ * before `until`, with the lamports paid, the wallet that paid them, the old
+ * record, and a verdict:
+ * - UNCLASSIFIED: not exactly what the launch versions built. Look by hand.
+ * - USED: the old record says consumed. UNCLEAR: an unreadable record, or no slot.
+ * - REFUNDABLE: no SOL went from the payee to that wallet since the payment.
+ * - SENT_BACK: it is that wallet's only SOL payment in the whole history read,
+ *   and exactly once, after it, exactly its lamports went back to the wallet.
+ * - MAYBE_REFUNDED: anything else went back to the wallet since: a different
+ *   amount, more than one transfer, or a wallet with more than one SOL payment,
+ *   where no transfer says which payment it answered. Look by hand.
+ * The money that went back is read from the whole history, so the window
+ * changes only what is listed. A transaction not final yet is yielded UNCLEAR.
  * Nothing is marked: no version still running accepts SOL.
  */
 export async function* oldSolPayments({ rpc, store, now, payTo, until = now, since = LAUNCH_AT }) {
   if (until > now) throw new UsageError("--until is later than now.");
   if (!(since < until)) throw new UsageError("--since must be earlier than --until.");
   const rows = [];
-  for await (const row of history(rpc, payTo, since)) rows.push(row);
-  rows.reverse();
+  for await (const row of history(rpc, payTo, Math.min(since, LAUNCH_AT))) rows.push(row);
   const payments = [];
-  const events = new Map(); // payer -> [{ kind, signature, lamports }] oldest first
-  const note = (payer, event) => events.set(payer, [...(events.get(payer) ?? []), event]);
-  for (const row of rows) {
+  const pending = [];
+  const sentTo = new Map(); // wallet -> [{ signature, lamports, slot }]
+  for (const row of rows.reverse()) {
     if (row.err !== null) continue;
     const tx = await rpc.getTransaction(row.signature);
-    if (tx === null || tx.meta?.err !== null) continue;
-    const change = lamportChanges(tx);
-    const gained = change?.get(payTo) ?? 0;
-    if (gained < 0) {
-      // Sent out by the payee: a refund to the one account that gained exactly what the payee gave, fee aside.
-      const to = [...change.entries()].filter(([address, delta]) => address !== payTo && delta === -gained);
-      if (to.length === 1) note(to[0][0], { kind: "refund", signature: row.signature, lamports: -gained });
+    if (tx === null) {
+      pending.push(row.signature);
       continue;
     }
-    if (gained === 0) continue;
+    if (tx.meta?.err !== null) continue;
+    const slot = Number.isSafeInteger(tx.slot) ? tx.slot : null;
+    const payeeKey = tx.transaction?.message?.accountKeys?.find?.((key) => pubkeyOf(key) === payTo);
+    if (payeeKey?.signer === true) {
+      for (const transfer of systemTransfers(tx)) {
+        if (transfer.source !== payTo || transfer.destination === payTo) continue;
+        sentTo.set(transfer.destination, [...(sentTo.get(transfer.destination) ?? []), { signature: row.signature, lamports: transfer.lamports, slot }]);
+      }
+      continue;
+    }
+    const paid = solPayment(tx, { payTo });
+    if (!paid) continue;
     const time = Number.isSafeInteger(tx.blockTime) ? tx.blockTime * 1000 : null;
-    if (time !== null && time >= until) continue;
-    if (referenceCandidates(tx, { payTo }).length === 0) continue;
-    const paidBy = [...change.entries()].filter(([address, delta]) => address !== payTo && delta === -gained);
-    const payer = paidBy.length === 1 ? paidBy[0][0] : null;
     const ledger = await readLedger(store, row.signature, tx.transaction.message.accountKeys.map(pubkeyOf));
-    const report = { signature: row.signature, blockTime: time === null ? null : tx.blockTime, lamports: gained, payer, oldState: ledger.oldState };
-    payments.push(report);
-    if (payer && ledger.oldState !== "consumed") note(payer, { kind: "payment", signature: row.signature, lamports: gained });
+    payments.push({ signature: row.signature, blockTime: time === null ? null : tx.blockTime, time, slot, ...paid, oldState: ledger.oldState });
   }
-  const paired = new Map();
-  for (const list of events.values()) {
-    const byAmount = new Map();
-    for (const event of list) byAmount.set(event.lamports, [...(byAmount.get(event.lamports) ?? []), event]);
-    for (const same of byAmount.values()) for (const [payment, refund] of pairRefunds(same)) paired.set(payment, refund);
+
+  const listed = (time) => time === null || (time >= since && time < until);
+  for (const signature of pending) {
+    yield { signature, blockTime: null, lamports: null, payer: null, oldState: null, verdict: UNCLEAR, why: "not final yet, so it cannot be read: run this again in a minute" };
   }
-  for (const report of payments) {
-    if (report.oldState === "consumed") yield { ...report, verdict: USED, why: "the old version's record says it unlocked a grind" };
-    else if (report.oldState === "unreadable") {
+  for (const { time, slot, problem, ...payment } of payments) {
+    if (!listed(time)) continue;
+    const report = { signature: payment.signature, blockTime: payment.blockTime, lamports: payment.lamports, payer: payment.payer, oldState: payment.oldState };
+    if (problem) {
+      yield { ...report, verdict: UNCLASSIFIED, why: `${problem}. It may not be a payment: look by hand, and send nothing on this tool's word` };
+      continue;
+    }
+    if (payment.oldState === "consumed") {
+      yield { ...report, verdict: USED, why: "the old version's record says it unlocked a grind" };
+      continue;
+    }
+    if (payment.oldState === "unreadable") {
       yield { ...report, verdict: UNCLEAR, why: "the ledger has a record under one of its accounts that the old version could not have written" };
-    } else if (!report.payer) yield { ...report, verdict: UNCLEAR, why: "no single wallet's SOL paid it" };
-    else if (paired.has(report.signature)) {
-      yield { ...report, sentBack: paired.get(report.signature), verdict: SENT_BACK, why: `the same SOL already went back to that wallet in ${paired.get(report.signature)}` };
-    } else yield { ...report, verdict: REFUNDABLE, why: `send ${SOL(report.lamports)} SOL back to the wallet that paid` };
+      continue;
+    }
+    if (slot === null) {
+      yield { ...report, verdict: UNCLEAR, why: "the node gave no slot for it, so nothing can be placed after it" };
+      continue;
+    }
+    const back = (sentTo.get(payment.payer) ?? []).filter((transfer) => transfer.slot === null || transfer.slot >= slot);
+    if (back.length === 0) {
+      yield { ...report, verdict: REFUNDABLE, why: `send ${SOL(payment.lamports)} SOL back to the wallet that paid` };
+      continue;
+    }
+    const only = payments.filter((other) => other.payer === payment.payer).length === 1;
+    const [transfer] = back;
+    if (only && back.length === 1 && transfer.lamports === payment.lamports && transfer.slot > slot) {
+      yield { ...report, sentBack: transfer.signature, verdict: SENT_BACK, why: `exactly that SOL went back to that wallet in ${transfer.signature}: send nothing` };
+      continue;
+    }
+    const sent = back.map((other) => `${other.signature} (${SOL(other.lamports)} SOL)`).join(", ");
+    yield {
+      ...report,
+      verdict: MAYBE_REFUNDED,
+      why: `since this payment the payee sent that wallet ${sent}, and the wallet made ${only ? "only this" : "more than one"} SOL payment: which payment that answered cannot be told from the chain. Look by hand`,
+    };
   }
+}
+
+/**
+ * The same RPC, retrying a call that failed for a reason that passes: a
+ * timeout, a dropped connection, HTTP 429 or a 5xx. Waits 1, 2 and 4
+ * seconds between tries, then gives up with the last error. Anything else (a
+ * bad answer, a refused request) fails at once. The operator's tool only:
+ * the site's functions answer at once and let the page back off.
+ */
+export function retrying(rpc, { attempts = 4, sleep = sleepFor, delayMs = 1_000 } = {}) {
+  const wrapped = {};
+  for (const [name, method] of Object.entries(rpc)) {
+    if (typeof method !== "function") continue;
+    wrapped[name] = async (...args) => {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return await method.apply(rpc, args);
+        } catch (error) {
+          const passing = error instanceof RpcError && /: (timeout|network|http 429|http 5\d\d)$/.test(error.message);
+          if (!passing || attempt >= attempts) throw error;
+          await sleep(delayMs * 2 ** (attempt - 1));
+        }
+      }
+    };
+  }
+  return wrapped;
 }
 
 /**
@@ -639,11 +865,11 @@ export function openStore({ siteID, token, getStore = netlifyGetStore }) {
 
 const USAGE = `Usage:
   node web/scripts/payments.mjs check <signature>
-  node web/scripts/payments.mjs mark-refunded <signature>
+  node web/scripts/payments.mjs mark-refunded <signature> [--sent <refund signature>]
   node web/scripts/payments.mjs old-payments --until <ISO time> [--since <ISO time>]
   node web/scripts/payments.mjs old-sol-payments [--until <ISO time>] [--since <ISO time>]
 
---since defaults to the launch, 2026-11-15T14:37:02.000Z.
+--since defaults to ${new Date(LAUNCH_AT).toISOString()}, the first commit with the payment functions.
 Reads SOLANA_RPC_URL, NETLIFY_SITE_ID and NETLIFY_AUTH_TOKEN from the environment.
 See DEPLOY.md, "Refund requests".`;
 
@@ -657,9 +883,18 @@ function parseTime(flag, value) {
 
 export function parseArgs(argv) {
   const [command, ...rest] = argv;
-  if (command === "check" || command === "mark-refunded") {
+  if (command === "check") {
     if (rest.length !== 1 || !isSignature(rest[0])) throw new UsageError(`${command} takes one transaction signature.`);
     return { command, signature: rest[0] };
+  }
+  if (command === "mark-refunded") {
+    const [signature, flag, sent, ...extra] = rest;
+    const plain = rest.length === 1;
+    const recording = rest.length === 3 && flag === "--sent" && isSignature(sent) && extra.length === 0;
+    if (!isSignature(signature) || !(plain || recording)) {
+      throw new UsageError("mark-refunded takes one payment signature, and --sent <refund signature> once the refund is sent.");
+    }
+    return { command, signature, sent: recording ? sent : undefined };
   }
   if (command === "old-payments" || command === "old-sol-payments") {
     const times = {};
@@ -741,6 +976,7 @@ function printReport(report, payTo, out) {
       spent = `marked refunded at ${msTime(report.spent.at)}, to ${report.spent.payer ?? "an unrecorded wallet"}`;
     }
     out(`  spent/<signature>:    ${spent}`);
+    out(`  refund recorded:      ${report.recorded ?? "none"}`);
     if (report.old.length === 0) out("  old-version records:  none");
     for (const record of report.old) {
       const about =
@@ -752,13 +988,14 @@ function printReport(report, payTo, out) {
   }
   out(`Verdict: ${report.verdict}`);
   out(`  ${report.why}`);
-  if (report.verdict === REFUNDABLE) out(`  To refund it: mark-refunded ${report.signature}, then send ${price} USDC from ${payTo} to ${report.payer}.`);
-  if (report.verdict === SENT_BACK) out(`  Send nothing. To record it so it cannot be used: mark-refunded ${report.signature}.`);
+  if (report.verdict === REFUNDABLE) {
+    out(`  To refund it: mark-refunded ${report.signature}, send ${price} USDC from ${payTo} to ${report.payer}, then mark-refunded ${report.signature} --sent <that transfer's signature>.`);
+  }
 }
 
 async function runOldPayments({ rpc, store, now, until, since = LAUNCH_AT }, out) {
   out(`Payments to ${PAY_TO}'s USDC account before ${msTime(until)}, from ${msTime(since)}.`);
-  out("Listed: every one not used for a grind and not already refunded.");
+  out("Listed: every one not used for a grind and not refunded with its refund recorded.");
   out("signature  time  paid-by  old-record  verdict");
   const counts = { listed: 0, [USED]: 0, [REFUNDED]: 0 };
   for await (const report of oldPayments({ rpc, store, now, payTo: PAY_TO, until, since })) {
@@ -772,8 +1009,8 @@ async function runOldPayments({ rpc, store, now, until, since = LAUNCH_AT }, out
     );
     if (report.verdict !== REFUNDABLE) out(`  ${report.why}`);
   }
-  out(`Listed ${counts.listed}. Not listed: ${counts[USED]} used for a grind, ${counts[REFUNDED]} already refunded.`);
-  out("Refund a REFUNDABLE payment with mark-refunded <signature>, then send it back. SENT_BACK: send nothing, mark-refunded records it. UNCLEAR ones need a look by hand.");
+  out(`Listed ${counts.listed}. Not listed: ${counts[USED]} used for a grind, ${counts[REFUNDED]} refunded.`);
+  out("REFUNDABLE: mark-refunded <signature>, send the refund, then mark-refunded <signature> --sent <its signature>. MARKED and MAYBE_REFUNDED: decide by hand, as each line says. UNCLEAR: look by hand.");
 }
 
 async function runOldSolPayments({ rpc, store, now, until = now, since = LAUNCH_AT }, out) {
@@ -786,16 +1023,17 @@ async function runOldSolPayments({ rpc, store, now, until = now, since = LAUNCH_
       continue;
     }
     counts.listed += 1;
-    out([report.signature, timeOf(report.blockTime), report.payer ?? "unknown", SOL(report.lamports), report.oldState, report.verdict].join("  "));
+    out([report.signature, timeOf(report.blockTime), report.payer ?? "unknown", SOL(report.lamports), report.oldState ?? "unknown", report.verdict].join("  "));
     out(`  ${report.why}`);
   }
   out(`Listed ${counts.listed}. Not listed: ${counts[USED]} used for a grind.`);
-  out("Send each REFUNDABLE one exactly the SOL listed, from the payee wallet to the wallet listed. Then run this again: each shows SENT_BACK.");
+  out("REFUNDABLE: send exactly the SOL listed, from the payee wallet to the wallet listed, then run this again. Send nothing for any other verdict without looking at it by hand.");
 }
 
 /**
- * The command line. Returns the exit code: 0 done (check and old-payments
- * always, mark-refunded only when it marked), 1 refused or failed, 2 usage.
+ * The command line. Returns the exit code: 0 done (check and the lists
+ * always; mark-refunded only when it marked or recorded), 1 refused or
+ * failed, 2 usage.
  */
 export async function main(argv, deps = {}) {
   const {
@@ -805,6 +1043,7 @@ export async function main(argv, deps = {}) {
     now = Date.now,
     createRpc = defaultCreateRpc,
     getStore = netlifyGetStore,
+    sleep = sleepFor,
   } = deps;
   let secrets = [];
   const out = (line) => print(redact(line, secrets));
@@ -814,7 +1053,7 @@ export async function main(argv, deps = {}) {
     command = args.command;
     const settings = readEnv(env);
     secrets = secretsOf(settings);
-    const rpc = createRpc(settings.rpcUrl);
+    const rpc = retrying(createRpc(settings.rpcUrl), { sleep });
     const store = openStore({ siteID: settings.siteID, token: settings.token, getStore });
     const at = now();
 
@@ -830,28 +1069,38 @@ export async function main(argv, deps = {}) {
       printReport(await checkPayment({ rpc, store, now: at, payTo: PAY_TO, signature: args.signature }), PAY_TO, out);
       return 0;
     }
-    const result = await markRefunded({ rpc, store, now: at, payTo: PAY_TO, signature: args.signature });
+    const result = await markRefunded({ rpc, store, now: at, payTo: PAY_TO, signature: args.signature, sent: args.sent });
     printReport(result.report, PAY_TO, out);
+    if (result.already) {
+      out(`${args.sent} is already recorded as its refund. Send nothing.`);
+      return 0;
+    }
+    if (args.sent !== undefined) {
+      if (result.recorded === null) {
+        out(`Not recorded: ${result.why}.`);
+        return 1;
+      }
+      if (result.why) out(`Note: ${result.why}.`);
+      out(`Recorded ${result.recorded} as the refund of ${args.signature}${result.marked ? ", and marked it refunded" : ""}. Send nothing more for it.`);
+      return 0;
+    }
     if (!result.marked) {
       out(`Not marked: ${result.why}.`);
       return 1;
     }
     out(`Marked spent/${args.signature} refunded. verify and consume now refuse it.`);
-    if (result.alreadySent) {
-      out(`It was already sent back in ${result.alreadySent}. Send nothing.`);
-      return 0;
-    }
     out(`Send exactly ${formatUsdc(USDC_BASE_UNITS)} USDC from the payee wallet ${PAY_TO} to:`);
     out(`  ${result.payer}`);
     out("That is the wallet whose USDC paid. Send to no other address, whoever asked.");
+    out(`Then record it: mark-refunded ${args.signature} --sent <the transfer's signature>.`);
     return 0;
   } catch (error) {
     let message;
     if (error instanceof UsageError) message = `${error.message}\n\n${USAGE}`;
-    else if (error instanceof RpcError) message = `The Solana RPC did not answer usefully (${error.message}). Try again.`;
+    else if (error instanceof RpcError) message = `The Solana RPC did not answer usefully (${error.message}), after retrying. Try again later.`;
     else message = `Stopped: ${error?.name ?? "Error"}: ${error?.message ?? String(error)}`;
     if (command === "mark-refunded" && !(error instanceof UsageError)) {
-      message += "\nThe mark may or may not have been written. Run check before sending anything.";
+      message += "\nThe mark or the refund record may or may not have been written. Run check before sending anything.";
     }
     printError(redact(message, secrets));
     return error instanceof UsageError ? 2 : 1;

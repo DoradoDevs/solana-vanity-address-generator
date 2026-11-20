@@ -118,7 +118,9 @@ Deploying replaces the page and the functions together. Switching from `34623f1`
 
 Customers ask for a refund by opening an issue on the GitHub repository and quoting what the page showed them: the payment's reference and, if the page knew it, its transaction signature. Everything in such an issue is public anyway. Never ask a customer for anything secret, and never ask for or show the payment claim (`vg-pay-claim`); a refund needs none of it.
 
-Refunds are handled with `web/scripts/payments.mjs`, a tool you run on your own computer. It is not part of the site and is never deployed. It reads the payment from the chain and the ledger from Netlify Blobs, and the only thing it writes is a refund mark. It holds no key and moves no money: you send the refund yourself, from the payee wallet.
+Refunds are handled with `web/scripts/payments.mjs`, a tool you run on your own computer. It is not part of the site and is never deployed. It reads the payment from the chain and the ledger from Netlify Blobs, and the only things it writes are refund records: the mark that stops a payment from being used, and which transfer refunded it. It holds no key and moves no money: you send the refund yourself, from the payee wallet.
+
+Where it cannot be sure, it says so and asks you to look by hand. It never tells you to send money, or to send nothing, on a guess.
 
 Use it only once this version is published. The old functions do not read the refund mark.
 
@@ -138,7 +140,7 @@ Use it only once this version is published. The old functions do not read the re
 
    The token can read and write every site on your account. Keep it out of files, chat and shell history where you can (on most shells, a command typed with a leading space is not saved), and revoke it when you are done.
 
-3. A Solana mainnet RPC URL. The one in the Netlify UI (`SOLANA_RPC_URL`) works.
+3. A Solana mainnet RPC URL. Use a key of its own if your provider gives you one: the tool reads wallets' histories one transaction at a time, and with the site's key (`SOLANA_RPC_URL` in the Netlify UI, which also works) it shares the site's rate limit and credits. The tool retries a call that times out, drops, or is rate limited (HTTP 429 or 5xx), waiting 1, 2 and 4 seconds, then stops with "Try again later".
 
 4. In the terminal you will run the tool from:
 
@@ -156,7 +158,7 @@ The tool never prints the token or any part of the RPC URL, error messages inclu
 
 If the issue quotes a signature (88 or so characters), use it. If it quotes only a reference (about 44 characters), open `https://solscan.io/account/<reference>`: the transactions listed there name it. The payment is the one that sent 1 USDC to `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp`. Copy its signature. If several did, check each. A transfer quoted that names no reference (a tip sent to the same address, which the page shows for tips) is not a payment, and the tool says so.
 
-### Check, mark, send: in that order
+### Check, mark, send, record: in that order
 
 1. **Check.**
 
@@ -168,13 +170,14 @@ If the issue quotes a signature (88 or so characters), use it. If it quotes only
 
    | Verdict | Meaning | What to do |
    |---|---|---|
-   | `REFUNDABLE` | A payment nothing has used, at least 24 hours old. | Go on to step 2. |
+   | `REFUNDABLE` | A payment nothing has used, at least 24 hours old, and no USDC went from the payee to the wallet that paid since. | Go on to step 2. |
    | `USED` | It unlocked a grind (in this version, or the old one). | No refund. Reply that the payment was used, and when. |
-   | `REFUNDED` | Already marked refunded. | Do not send again. Check the payee wallet's history for the refund to that wallet; if it is not there, the mark was made but the money never sent, so send it now. |
-   | `SENT_BACK` | Nothing used it and it is not marked, but exactly 1.00 USDC already went from the payee back to the wallet that paid, after the payment: it was refunded by hand. It prints that transfer. | **Send nothing.** Run step 2 to record it, so it cannot be used too; `mark-refunded` says to send nothing. |
+   | `MARKED` | Marked refunded, but no refund transfer is recorded for it: either it was sent and step 4 was not done, or it was never sent. It lists any USDC the payee sent that wallet since the payment. | If one of the transfers it lists is this payment's refund, do step 4 with it. If none is, send the refund (step 3), then step 4. |
+   | `REFUNDED` | Marked, and its refund transfer is recorded. | **Send nothing.** |
+   | `MAYBE_REFUNDED` | Nothing used it and it is not marked, but the payee sent the wallet that paid some USDC after the payment, in a transfer no record gives to any payment. It lists those transfers. | Look by hand. If one of them refunded this payment, record it: `mark-refunded <signature> --sent <that transfer>` (it marks the payment too). If none did, send the refund and record it the same way. The tool will not mark it without a transfer. |
    | `NOT_A_PAYMENT` | Not a payment this site's page built: not a finalized, successful transfer of exactly 1.00 USDC to the payee, or one that names no reference account (every page version adds one; a plain transfer such as a tip has none). | No refund through this tool. A transaction that is not final yet says this too: check again in a minute. A SOL payment from launch day is not a USDC payment: see "SOL payments from launch day". |
    | `TOO_RECENT` | Unspent, but paid less than 24 hours ago. | Wait until the time it prints, then check again. |
-   | `UNCLEAR` | It paid, but the tool cannot settle it: no single wallet paid exactly 1.00 USDC, the chain gave no time for it, or the ledger holds a record under one of its accounts that the old version could not have written. | Look at it by hand. The tool will not mark it. |
+   | `UNCLEAR` | It paid, but the tool cannot settle it: no single wallet paid exactly 1.00 USDC, the chain gave no time or slot for it, the ledger holds a record under one of its accounts that the old version could not have written, or a transaction of the paying wallet after it is not final yet or cannot be read. | Look at it by hand; the "not final yet" case goes away if you check again in a minute. The tool will not mark it. |
 
 2. **Mark.**
 
@@ -182,15 +185,23 @@ If the issue quotes a signature (88 or so characters), use it. If it quotes only
    node scripts/payments.mjs mark-refunded <signature>
    ```
 
-   It runs the same check again and refuses unless the verdict is `REFUNDABLE` or `SENT_BACK`. Then it writes `spent/<signature>` = `{ refunded: true, at, payer }` (with `sentBack: <the transfer>` for a `SENT_BACK` one) with the same conditional write that spends a payment for a grind, and prints the wallet to refund. If anything spent the payment between the check and the write, the write fails and nothing is marked: run check again. If the command stops with an error from the ledger, the mark may or may not have been written: run check before sending anything.
+   It runs the same check again and refuses unless the verdict is `REFUNDABLE`. Then it writes `spent/<signature>` = `{ refunded: true, at, payer }` with the same conditional write that spends a payment for a grind, and prints the wallet to refund. If anything spent the payment between the check and the write, the write fails and nothing is marked: run check again. If the command stops with an error from the ledger, the mark may or may not have been written: run check before sending anything.
 
-3. **Send**, unless `mark-refunded` said the money was already sent back, exactly 1.00 USDC from the payee wallet `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp` to the wallet `mark-refunded` printed, as an ordinary USDC transfer to that wallet address. Then reply on the issue with the refund's transaction signature and close it.
+3. **Send** exactly 1.00 USDC from the payee wallet `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp` to the wallet `mark-refunded` printed, as an ordinary USDC transfer to that wallet address, on its own (one refund per transfer). Copy the transfer's signature.
+
+4. **Record** which transfer refunded it:
+
+   ```bash
+   node scripts/payments.mjs mark-refunded <signature> --sent <the transfer's signature>
+   ```
+
+   It refuses, and writes nothing, unless the transfer is finalized (wait a minute after sending), moves exactly 1.00 USDC from the payee to the wallet that paid and no other wallet's USDC, landed after the payment, and is not already recorded as another payment's refund. Then it writes `refund-transfer/<transfer>` = `{ payment, at }` (created once, so one transfer answers one payment) and `refund-sent/<signature>` = `{ transfer, at }`, and `check` says `REFUNDED`. Run again with the same transfer, it says it is already recorded. Then reply on the issue with the refund's signature and close it.
 
 **Why this order.** Once marked, `/api/verify` and `/api/consume` answer 409 "refunded" for that payment, so it can no longer unlock a grind. Marking first means a payment can never be both refunded and used: if the customer's page spends it first, the mark fails and you send nothing; if the mark lands first, the page is refused. Sending first and marking afterwards would leave a window where the customer gets the 1.00 USDC back and the grind.
 
 **Why anyone may ask, and why 24 hours.** The refund only ever goes to the wallet whose USDC paid, as read from the transaction, never to an address the person asking names. So a stranger who copies a signature off the chain cannot gain anything by asking, and there is no need to make customers prove who they are (which would mean asking for a secret, or a signed message most customers cannot produce). The one thing a stranger could do is get somebody else's payment refunded while its owner still meant to use it. The money then goes back to the owner, so nothing is lost, but they lose the grind they came for. The 24 hour wait (`REFUND_MIN_AGE_MS` in the tool) gives a customer whose page is still waiting on the payment time to use it first. A customer who paid and gave up can always be told to wait a day.
 
-**How the tool knows a refund was already sent.** `check` reads the history of the paying wallet's USDC accounts since the launch: every payment that wallet made that nothing used, and every transfer of exactly 1.00 USDC from the payee to it. A marked payment takes the refund its mark names, or the first one after its mark (marking comes first); every other refund answers that wallet's oldest payment still unanswered. So a payment refunded by hand, before or without this runbook, reads `SENT_BACK`, and is never paid twice. Send refunds only as step 3 says, to the wallet itself, or the tool will not see them.
+**How the tool knows a refund was already sent.** Only step 4's record makes it say "send nothing". Without one, it reads the history of the account that paid and of the wallet's USDC associated account (where a transfer to the wallet lands), from now back to the payment and no further, and lists every transfer of USDC, of any amount, from the payee to that wallet that is not recorded as some payment's refund. If there is one, the verdict is `MARKED` or `MAYBE_REFUNDED` and you decide; if there is none, it is `REFUNDABLE`. Nothing is paired by time: the clock of the computer you run it on plays no part, and neither do the `--since` and `--until` of the lists. So a payment refunded by hand, before or without this runbook, comes up `MAYBE_REFUNDED` until you record its transfer; and a wallet that paid twice, refunded once, shows the unrecorded refund on its other payment until you record it. A transfer to another USDC account of the wallet, neither the one that paid nor its associated account, is not seen: send refunds only as step 3 says, to the wallet itself.
 
 The customer's SOL network fee is not refunded; the tool only covers the 1.00 USDC.
 
@@ -210,13 +221,13 @@ Run it **after** this version is published, not before. Until the switch the old
    node scripts/payments.mjs old-payments --until 2026-11-20T15:04:05Z
    ```
 
-   `--until` is the publish time: payments made at or after it belong to this version and are left out. The tool refuses a time in the future. `--since` defaults to the launch, `2026-11-15T14:37:02Z` (the commit time of `8d35fb7`, the first version that took payments; no deploy can be older than its commit). Give an earlier `--since` only to look further back.
+   `--until` is the publish time: payments made at or after it belong to this version and are left out. The tool refuses a time in the future. `--since` defaults to `2026-11-15T14:36:14Z`, the time of `63308b0`, the first commit on any branch with the payment functions. That is only as early as the repository can see: a deploy made with the Netlify CLI publishes the working tree, committed or not. **Before relying on the default**, open Deploys in the Netlify UI, scroll to the oldest deploy (production, branch or preview) whose function list shows `verify`, and note its time. If it is earlier than `2026-11-15T14:36:14Z`, pass `--since` a minute before it, here and to `old-sol-payments`.
 
-   It prints one line per payment that is neither used nor already refunded: signature, time, paying wallet, the old record's status (`paid`: verified but never used; `none`: never verified; `unreadable`: see `UNCLEAR`), and the verdict. It ends with how many were left out as used or refunded. Refunds sent from the payee, failed transactions, transfers of other amounts and transfers that name no reference (tips) are not payments and are not listed. A payment already refunded by hand is listed as `SENT_BACK`, with the transfer that refunded it.
+   It prints one line per payment that is neither used nor already refunded: signature, time, paying wallet, the old record's status (`paid`: verified but never used; `none`: never verified; `unreadable`: see `UNCLEAR`), and the verdict. It ends with how many were left out as used or refunded (with the refund recorded). Refunds sent from the payee, failed transactions, transfers of other amounts and transfers that name no reference (tips) are not payments and are not listed. A payment the payee may already have refunded by hand is listed as `MAYBE_REFUNDED`, with the transfers it saw.
 
-3. For each `REFUNDABLE` payment, run `mark-refunded <signature>` and send 1.00 USDC to the wallet it prints, exactly as in "Refund requests". For each `SENT_BACK` one, run `mark-refunded` and send nothing. Payments from the last 24 hours before the switch are listed as `TOO_RECENT`: mark them the next day. `UNCLEAR` ones need a look by hand.
+3. For each `REFUNDABLE` payment, mark, send and record exactly as in "Refund requests". For each `MAYBE_REFUNDED` or `MARKED` one, decide by hand as its line says, and record the transfer with `--sent`. Payments from the last 24 hours before the switch are listed as `TOO_RECENT`: do them the next day. `UNCLEAR` ones need a look by hand.
 
-4. Run `old-payments` again with the same `--until`. Everything you refunded is now counted as already refunded; the list should hold only what you chose to leave.
+4. Run `old-payments` again with the same `--until`. Everything you refunded and recorded is now counted as refunded; the list should hold only what you chose to leave.
 
 Keep the old records in the store: they are what shows which old payments were used. A payment the old page sent in the last seconds before the switch can land just after it and is then not listed; if its customer asks, "Refund requests" handles it.
 
@@ -228,7 +239,17 @@ The first versions (`8d35fb7` to `7ec217c`, the morning of 2026-11-15) also took
 node scripts/payments.mjs old-sol-payments
 ```
 
-It reads the payee wallet's history from the launch to now and prints one line per SOL payment nothing used: signature, time, paying wallet, the SOL paid (to the lamport), the old record's status and the verdict. `REFUNDABLE`: send exactly that SOL from the payee wallet to that wallet. `SENT_BACK`: that SOL already went back to that wallet after the payment; send nothing. `UNCLEAR`: no single wallet paid it, or the ledger holds a record the old version could not have written; look by hand. Plain SOL transfers that name no reference (tips) are not listed. Nothing is marked: run it again after sending, and each one you sent shows `SENT_BACK`.
+It reads the payee wallet's history and lists only SOL that someone else sent the payee in a top-level SystemProgram transfer naming a reference account. It never lists a transaction the payee wallet signed (a swap, an unstake, a transfer of your own), SOL that reached it any other way (a program paying it from a vault), or a plain transfer that names no reference (a tip). For each one listed it prints the signature, time, paying wallet, the SOL paid (to the lamport), the old record's status and one verdict:
+
+| Verdict | Meaning | What to do |
+|---|---|---|
+| `REFUNDABLE` | Exactly what the launch versions built (one transfer from the wallet that signed and paid the fee, one reference, at most ComputeBudget instructions beside it, nothing else moved, about $1: between 0.001 and 0.02 SOL), the old record says nothing used it, and no SOL went from the payee to that wallet since. | Send exactly that SOL from the payee wallet to that wallet. |
+| `SENT_BACK` | Exactly the launch shape, the wallet's only SOL payment, and exactly its lamports went back to the wallet once, after it. | Send nothing. |
+| `MAYBE_REFUNDED` | SOL went back to the wallet since, but not in that one exact way: a different amount, more than one transfer, or a wallet that made more than one SOL payment (a used one included), where the chain cannot say which payment a transfer answered. | Look by hand. |
+| `UNCLASSIFIED` | SOL from someone else naming a reference, but not exactly the launch shape (it says how). It may not be a payment at all. | Look by hand. Send nothing on the tool's word. |
+| `UNCLEAR` | The ledger holds a record the old version could not have written, the chain gave no slot, or the transaction is not final yet. | Look by hand, or run again in a minute. |
+
+What went back is read over the payee wallet's whole history from `--since` or `2026-11-15T14:36:14Z`, whichever is earlier, to now: `--since` and `--until` change only which payments are listed. Nothing is marked. Run it again after sending: each one you sent shows `SENT_BACK`, or `MAYBE_REFUNDED` for a wallet that paid more than once (check those against what you sent).
 
 ## Domain vanitygrinder.com
 
@@ -247,8 +268,9 @@ Use the values in the Netlify UI if they differ. Wait until the domain shows a c
 
 - [ ] `SOLANA_RPC_URL` and `UNLOCK_SECRET` are set in the Netlify UI and are not in git.
 - [ ] The steps in "Before publishing this version" are done: `PAY_TO_ADDRESS` checked, no build-affecting variables, the old records kept.
-- [ ] After publishing: `old-payments --until <publish time>` run, every `REFUNDABLE` payment marked and refunded (the `TOO_RECENT` ones the next day), every `SENT_BACK` one marked and nothing sent, and run again to confirm ("Unspent payments from the old version").
-- [ ] `old-sol-payments` run, every `REFUNDABLE` SOL payment sent back, and run again: each shows `SENT_BACK` ("SOL payments from launch day").
+- [ ] Before the old lists: the oldest Netlify deploy that served `verify` is no earlier than `2026-11-15T14:36:14Z`, or `--since` is set before it ("Unspent payments from the old version", step 2).
+- [ ] After publishing: `old-payments --until <publish time>` run; every `REFUNDABLE` payment marked, refunded and its transfer recorded with `--sent` (the `TOO_RECENT` ones the next day); every `MAYBE_REFUNDED`, `MARKED` and `UNCLEAR` one looked at by hand; and run again to confirm ("Unspent payments from the old version").
+- [ ] `old-sol-payments` run, every `REFUNDABLE` SOL payment sent back, every other verdict but `USED` and `SENT_BACK` looked at by hand, and run again ("SOL payments from launch day").
 - [ ] The built bundle pins the payee: `grep -l crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp web/dist/assets/index-*.js` after `npm run build`, and the same address in the deployed `$SITE/$MAIN`.
 - [ ] `PAY_TO_ADDRESS` is unset, or set to exactly `crimeKXXM4ERRWcHZvetHPTz9BwoWYyfYzNjzD4THCp` (`PAY_TO` in `shared/payment.js`). `curl -s $SITE/api/quote` returns that address, not a 503.
 - [ ] `cd web && npm ci && npm test && npm run build` and `cd cli && npm ci && npm test` succeed.

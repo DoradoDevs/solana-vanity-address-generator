@@ -111,8 +111,10 @@ function abortableSleep(ms, signal) {
  * tab, so a tab closed mid-spend frees it at once, and `hold()` is always
  * true. Otherwise a lease in storage, which a tab closed mid-spend holds for
  * at most LEASE_MS. There `hold()` renews the lease and says whether this tab
- * still holds it: `fn` calls it before each request, and stops when it is
- * false (the tab was frozen past LEASE_MS and another tab took over).
+ * still holds it: `fn` calls it before each request and again when the answer
+ * arrives, and stops when it is false. A tab frozen past LEASE_MS keeps its
+ * lease unless another tab took it meanwhile; if one did, that tab owns the
+ * spend from then on, answers already on their way included.
  */
 function storageLock(storage, { now, sleep, random }) {
   return async (name, fn) => {
@@ -491,8 +493,10 @@ export function createPayFlow({
    * Send an unlock token to consume. The same token is safe to send again, so
    * a lost response is retried rather than treated as a failure. On a verdict
    * the attempt is cleared, if it is still `claim`. `hold` is the spend
-   * lock's: asked before each request, and when it is false nothing more is
-   * sent ("elsewhere").
+   * lock's: asked before each request and when its answer arrives. When it is
+   * false nothing more is sent and the answer is not acted on ("elsewhere"):
+   * the tab that took the lease replays the saved token and gets the same
+   * answer, so one payment still unlocks one grind.
    * @returns {Promise<{ ok: true } | { ok: false, reason: "reused" | "refunded" | "expired" | "bad" | "unavailable" | "elsewhere", message?: string }>}
    */
   async function spend(token, claim, hold = () => true) {
@@ -505,6 +509,7 @@ export function createPayFlow({
       } catch {
         response = null;
       }
+      if (!hold()) return { ok: false, reason: "elsewhere" };
       const reason = response?.data?.reason;
       const message = typeof response?.data?.message === "string" ? response.data.message : undefined;
       if (response?.status === 200 && response.data?.ok === true) {
@@ -553,9 +558,11 @@ export function createPayFlow({
       if (spent.ok || (spent.reason !== "expired" && spent.reason !== "bad")) return spent;
 
       // That token can no longer spend. The payment may still be unspent: ask verify.
+      // (spend asked hold() when that answer arrived.)
       const current = pending();
-      if (!current || current.claim !== claim || !hold()) return { ok: false, reason: "elsewhere" };
+      if (!current || current.claim !== claim) return { ok: false, reason: "elsewhere" };
       const again = await check(current);
+      if (!hold()) return { ok: false, reason: "elsewhere" };
       if (again.state === "paid") {
         if (!update(claim, { token: again.token, tokenExpiresAt: again.expiresAt })) return { ok: false, reason: "elsewhere" };
         return spend(again.token, claim, hold);
