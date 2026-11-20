@@ -11,6 +11,7 @@ The code wins over this page. If they disagree, fix the page.
 - [The money path](#the-money-path): prepare, pay, verify, consume.
 - [Key generation](#key-generation): how a key is made and why it never leaves the tab.
 - [Response headers](#response-headers): the content security policy and where it comes from.
+- [Redirects](#redirects): the one public address, and the 301 from the netlify.app host.
 - [Page and design system](#page-and-design-system): the generator's layout, the vendored Quiet Technical files, and the UI rules.
 - [Running the gate](#running-the-gate): the checks that must pass before a commit.
 - [Findings register](findings.md): what the 2026-11-16 audit found and what became of each finding.
@@ -158,6 +159,18 @@ The key reaches the page only through `postMessage` from the worker. It is shown
 - Worker (`/assets/grind-worker-*.js`): `default-src 'none'; frame-ancestors 'none'`. A dedicated worker loaded by URL is governed by its own response's policy (checked in Chromium).
 
 `netlify.toml` and `web/netlify.toml` hold no headers. Netlify reads `web/netlify.toml` when the base directory is `web`; the two files are identical apart from `base`.
+
+## Redirects
+
+Last verified: 2026-11-20 on branch `chore/2026-11-20-no-netlify`, against `9bb0782`.
+
+`vanitygrinder.com` is the only public address. `web/public/_redirects` is the only source of redirect rules; Vite copies it to `dist/_redirects` unchanged, and neither `netlify.toml` holds a `[[redirects]]` block today.
+
+- Its first two rules send `https://vanitygrinder.netlify.app/*` and `http://vanitygrinder.netlify.app/*` to `https://vanitygrinder.com/:splat` with a forced 301 (`301!`), path and query kept. Netlify reads `_redirects` before any `netlify.toml` rule and applies the first match, so these must stay first.
+- The `from` is a full URL, so only that exact host matches: `vanitygrinder.com`, deploy previews (`deploy-preview-N--vanitygrinder.netlify.app`) and branch or unique deploys (`<hash>--vanitygrinder.netlify.app`) are not redirected.
+- Functions with a path (`/api/*`) are routed before redirects, so they still answer on the netlify.app host. The page never calls them there: it uses same-origin `/api/` paths, and `connect-src 'self'` allows nothing else.
+
+`web/test/build.test.js` checks the built rules: both schemes, the target, status 301 forced, the exact host, that no later rule from either source mentions `netlify.app`, and that `dist/_redirects` is a byte copy of `web/public/_redirects`. The live 301 has not been observed from this branch: it is unpushed and undeployed.
 
 ## Page and design system
 
