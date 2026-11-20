@@ -2,7 +2,7 @@
 
 Branch `audit/2026-11-16`, base `34623f1` (production). Every fix has a regression test that was seen failing without it; the audit reports name the scratch logs that hold those runs. Status words: FIXED, OPEN (known, not fixed), NEEDS-ALEX (a decision for the owner), REFUTED (checked and not a problem).
 
-Commits: `07131e5` payment, header and key fixes · `14b5aca` CLI tests and pool sizing · `28039ff` knowledge base · `edb18ad` payee pin and pre-sign check · `824ed25` kb stamp · `e4ea97a` fixes from the two independent reviews · `6a4bd47` kb stamp.
+Commits: `07131e5` payment, header and key fixes · `14b5aca` CLI tests and pool sizing · `28039ff` knowledge base · `edb18ad` payee pin and pre-sign check · `824ed25` kb stamp · `e4ea97a` fixes from the two independent reviews · `6a4bd47` kb stamp · `07445aa` this register · `9d8eba3` CI · `9273afb` spl-token removed, npm audit cleared · `a013fa9` round-4 review fixes · `1132cfd` kb stamp.
 
 ## Audit findings (VG)
 
@@ -10,75 +10,96 @@ Commits: `07131e5` payment, header and key fixes · `14b5aca` CLI tests and pool
 |---|---|---|---|---|---|
 | VG-01 | High | The payment reference was a bearer credential: anyone reading the chain could verify and consume a customer's grind first. | FIXED | 07131e5 | verify.test "knowing a payment's reference, or any account in it, redeems nothing"; "someone else's payment cannot be reached with one's own claim"; functions.test "a stranger who reads the payment off the chain cannot verify it" |
 | VG-02 | Med | One payment unlocked many grinds: keyed by the caller's reference, signature never deduplicated, and any account in the transaction worked as a reference. | FIXED | 07131e5 | verify.test "one payment naming three references unlocks one grind, not three" |
-| VG-03 | Med | Consume was read-then-write: parallel consumes all won, and a late verify flipped a spent record back to paid. | FIXED | 07131e5, e4ea97a | verify.test "fifty different tokens for one payment, spent at once: exactly one wins"; ledger.test "fifty different tokens for one payment, spent at once through Blobs: exactly one wins" (real client, atomic stand-in; the get-then-write mutant fails it) |
+| VG-03 | Med | Consume was read-then-write: parallel consumes all won, and a late verify flipped a spent record back to paid. | FIXED | 07131e5, e4ea97a | verify.test "fifty different tokens for one payment, spent at once: exactly one wins"; ledger.test "…through Blobs: exactly one wins" |
 | VG-04 | High | A customer who had just paid was told "No payment was found": lookup used the finalized default, the page stopped on that 404, and paying again overwrote the first reference. | FIXED | 07131e5 | pay-flow.test "a payment that is not visible yet is waited for…"; "a second payment cannot be started while one is unresolved"; verify.test not_found/pending tests; rpc.test commitment test |
 | VG-05 | Med | A cheap later transaction naming the reference hid the payment for good. | FIXED | 07131e5 | verify.test "a junk transaction that names the reference afterwards cannot hide the payment" |
-| VG-06 | Med | 1,000 junk transactions naming a paid reference, or an RPC answer of the wrong shape, gave a permanent 400 and the page deleted the paid claim. | FIXED | 07131e5, e4ea97a | verify.test "a full page of signatures hides the oldest…"; "a full page that still shows the payment is no reason to stall…"; "the transaction the page sent is judged on its own…"; "a node that serves the wrong transaction…" |
+| VG-06 | Med | 1,000 junk transactions naming a paid reference, or an RPC answer of the wrong shape, gave a permanent 400 and the page deleted the paid claim. | FIXED | 07131e5, e4ea97a, a013fa9 | verify.test "a full page of transactions after the payment cannot hide it: the search walks back to the oldest end"; "the transaction the page sent is judged on its own…"; "a node that serves the wrong transaction…" |
 | VG-07 | Low | Missing `preTokenBalances` made a transaction that moved nothing read as a payment. | FIXED | 07131e5 | verify.test "token balances that are missing or malformed never read as a payment" |
-| VG-08 | Low | A failed transaction showed "pending" for 2 minutes, then told the user to "connect again", which started a new payment. | FIXED | 07131e5 | verify.test "the page's own transaction that failed on chain is not a payment"; "a failed first attempt does not block…" |
-| VG-09 | Med | The CSP backing "keys never leave" allowed every `*.netlify.app` site and localhost; the worker had no policy of its own. | FIXED | 07131e5 | privacy.test connect-src and worker-policy tests; build.test worker rule |
-| VG-10 | Med | prepare and verify were unauthenticated, unthrottled RPC fan-out; cross-site `text/plain` posts ran them; web3.js retried on 429; no timeout. | FIXED (code) | 07131e5 | functions.test rate-limit config, "prepare rejects malformed requests…", "…posts that are not JSON…"; rpc.test timeout. The 429s themselves are checked only on a live deploy (DEPLOY.md). |
-| VG-11 | Low | The key was wiped 60 s after a match even when unattended; closing the tab lost it without warning. | FIXED | 07131e5 | Chromium harness only (main.js has no DOM test) |
-| VG-12 | Low | The CSP allowlisted hashes of an unreviewed host-injected script; headers were hand-kept in 3 places with no drift check; the 404 page's inline style was blocked. | FIXED | 07131e5 | privacy.test "headers live in one place…", "no inline code…"; build.test "the build stops if a page gains inline code…" |
-| VG-13 | Low | The estimator treated "J" as a common first character, and the "sol" example cannot exist in Base58. | FIXED | 07131e5 | grind.test "first-character odds are the real distribution, J included"; copy.test "every example pattern…" |
+| VG-08 | Low | A failed transaction showed "pending" for 2 minutes, then told the user to "connect again", which started a new payment. | FIXED | 07131e5 | verify.test failed-transaction tests |
+| VG-09 | Med | The CSP backing "keys never leave" allowed every `*.netlify.app` site and localhost; the worker had no policy of its own. | FIXED | 07131e5 | privacy.test; build.test worker rule |
+| VG-10 | Med | prepare and verify were unthrottled RPC fan-out; cross-site `text/plain` posts ran them; web3.js retried on 429; no timeout. | FIXED (code) | 07131e5 | functions.test rate-limit and content-type tests; rpc.test timeout. The 429s are checked only on a live deploy. |
+| VG-11 | Low | The key was wiped 60 s after a match even when unattended; closing the tab lost it without warning. | FIXED | 07131e5 | Chromium harness only |
+| VG-12 | Low | The CSP allowlisted hashes of an injected script; headers were kept in 3 places; the 404 page's inline style was blocked. | FIXED | 07131e5 | privacy.test; build.test |
+| VG-13 | Low | The estimator treated "J" as a common first character, and the "sol" example cannot exist in Base58. | FIXED | 07131e5 | grind.test; copy.test |
 | VG-14 | Low | Without Blobs configured, the ledger silently fell back to memory. | FIXED | 07131e5 | functions.test "with no ledger there is no unlock…" |
-| VG-15 | Low | The tip button copied a different address from the one shown. | FIXED | 07131e5, e4ea97a | Chromium harness; pay-page.test "the tip address is the bundle's own…" (the server can no longer replace it) |
-| VG-16 | Info | The test suite failed on Windows and needed the CLI's dependencies. | FIXED | 07131e5, 14b5aca | build.test runs vite via `process.execPath`; cli/test/cli.test.js |
-| VG-17 | Low | A lost consume response was later reported "already used": a retry after expiry, or more than 60 s later, was refused. | FIXED | 07131e5, e4ea97a | verify.test "the token that spent a payment gets the same answer whenever it asks again, even after it expires"; ledger.test "the winning token's retry is answered from the store itself…"; pay-flow.test "the token is saved with the claim before consume is called…" |
+| VG-15 | Low | The tip button copied a different address from the one shown. | FIXED | 07131e5, e4ea97a | pay-page.test "the tip address is the bundle's own…" |
+| VG-16 | Info | The test suite failed on Windows and needed the CLI's dependencies. | FIXED | 07131e5, 14b5aca | build.test; cli/test/cli.test.js |
+| VG-17 | Low | A lost consume response was later reported "already used". | FIXED | 07131e5, e4ea97a, a013fa9 | verify.test "the token that spent a payment gets the same answer whenever it asks again, even after it expires"; "the token that won is answered 'ok' again after UNLOCK_SECRET is rotated; no other token is"; ledger.test retry test; pay-flow.test "the token is saved with its claim before consume is called, and a reload replays it after asking verify" |
 | VG-18 | Low | The key sat in a translatable page, so browser translation would send it to a translation service. | FIXED | 07131e5 | privacy.test "the terminal is marked never to be machine-translated" |
-| VG-19 | Low | The browser signed whatever prepare returned, and the payee came from a server env var. | FIXED | edb18ad, e4ea97a | transfer-check.test (every rule pinned by exact reason, each fails when that rule alone is removed); functions.test "a PAY_TO_ADDRESS other than the pinned payee closes quote, prepare and verify"; pay-flow.test "only the transfer prepare built for this claim reaches the wallet…", "a transfer that is not exactly the expected one is never handed to the wallet…", "when the page's check cannot run, nothing is signed"; pay-page.test "a transfer the page's check refuses is never shown to the wallet…" |
-| VG-20 | Low | The Blobs store is site-wide, so deploy previews can write to it. | NEEDS-ALEX (partly fixed) | 07131e5 | Nothing in the store can grant a grind any more. A hostile fork-PR preview could still mark payments spent: turn off or gate fork deploy previews (DEPLOY.md step 7). |
-| VG-21 | Info | The paywall is enforced only in the browser. | NEEDS-ALEX (by design) | — | Documented in README and DEPLOY. |
-| VG-22 | Info | npm audit: bigint-buffer (high), stream-json and uuid (moderate), all under server-only web3.js and spl-token. | OPEN | — | Not reachable with caller input. Present at base. |
-| VG-23 | Low | Another tab can give up a claim while this tab's wallet prompt is open; a late send then shows no status. | OPEN | — | The signature is never attached to the wrong claim (pay-flow.test "a wallet that answers after another tab replaced the attempt leaves the new attempt alone"). Needs a wallet that sends more than 180 s after prepare; not reproduced. |
+| VG-19 | Low | The browser signed whatever prepare returned, and the payee came from a server env var. | FIXED | edb18ad, e4ea97a | transfer-check.test; functions.test PAY_TO_ADDRESS test; pay-flow.test and pay-page.test pre-sign tests |
+| VG-20 | Low | The Blobs store is site-wide, so deploy previews can write to it. | NEEDS-ALEX (partly fixed) | 07131e5 | Nothing in the store can grant a grind. A hostile fork-PR preview could still mark payments spent or refunded: gate fork previews (DEPLOY step 7). |
+| VG-21 | Info | The paywall is enforced only in the browser. | NEEDS-ALEX (by design) | — | Documented |
+| VG-22 | Info | npm audit: bigint-buffer, stream-json and uuid under web3.js and spl-token. | FIXED | 9273afb | spl-token removed (lib/tx.js held to recorded spl-token 0.4.15 answers by spl-token-vectors.test; 50k random transactions identical); overrides jayson 5.0.0 and uuid 11.1.1; audit 8 → 0. jayson 5 is outside web3.js's ^4.3.0: NEEDS-ALEX to accept. |
+| VG-23 | Low | Another tab can give up a claim while this tab's wallet prompt is open; a late send then shows no status. | OPEN (narrowed) | a013fa9 | The signature is never attached to the wrong claim, and a token is never spent or saved for another claim (pay-flow.test "a token is only ever spent for the claim it was issued for…", "a fresh token fetched while another tab replaced the attempt is never saved onto the new attempt"). A given-up payment leaves a refund note. The status gap itself is not reproduced. |
 | VG-24 | Low | The reference was saved only after the wallet returned. | FIXED | 07131e5 | pay-flow.test "a claim is 32 random bytes… saved before anything is sent" |
-| VG-25 | Low | A `?ref=` link silently replaced a saved, paid but unspent reference. | FIXED | 07131e5 | Removed; functions.test refuses a legacy `{reference}` body |
+| VG-25 | Low | A `?ref=` link silently replaced a saved reference. | FIXED | 07131e5 | functions.test refuses a legacy `{reference}` body |
 | VG-26 | Low | An `UNLOCK_SECRET` of any length was accepted. | FIXED | 07131e5 | functions.test "an unset or short UNLOCK_SECRET closes verify and consume…" |
-| VG-27 | Info | `PAY_TO_ADDRESS` in `netlify.toml` never reached the functions; DEPLOY.md called the repo private. | FIXED | 07131e5, e4ea97a | copy.test "what the page says… matches what the code does"; toml comments reworded (B-R2) |
-| R-1 | — | The RPC URL (with its API key) reaches a response, error or log. | REFUTED | — | rpc.test "no failure message ever contains the endpoint…"; functions.test RPC-failure tests |
-| R-2 | — | Unlock tokens can be forged, altered or timed. | REFUTED | — | verify.test "consume refuses tokens that are expired, altered, foreign or malformed" |
-| R-3 | — | A generated key can leave the tab. | REFUTED | — | build.test worker has no send/store/load; page talks only to /api/; keys.test known-answer tests |
-| R-4 | — | Secrets in the git history. | REFUTED | — | Full scan of every blob on every branch: clean |
+| VG-27 | Info | `PAY_TO_ADDRESS` in `netlify.toml` never reached the functions; DEPLOY.md called the repo private. | FIXED | 07131e5, e4ea97a | copy.test |
+| R-1 | — | The RPC URL (with its API key) reaches a response, error or log. | REFUTED | — | rpc.test; functions.test; payments-admin.test "the command line never prints the token or the RPC URL…" |
+| R-2 | — | Unlock tokens can be forged, altered or timed. | REFUTED | — | verify.test "consume refuses tokens that are expired, altered, foreign or malformed". The replay of the token that already won is matched by jti without the MAC, by design (C-R16); it grants nothing new. |
+| R-3 | — | A generated key can leave the tab. | REFUTED | — | build.test; keys.test |
+| R-4 | — | Secrets in the git history. | REFUTED | — | Full scan clean. The test-only fakes in payments-admin.test.js are not credentials. |
 
 ## Independent review of 07131e5..28039ff (A)
 
 | ID | Sev | Finding | Status | Commit | Regression test |
 |---|---|---|---|---|---|
-| A-R1 / A-R11 | Low | Single-spend under concurrency was tested only against an in-memory store; Netlify's local Blobs server double-spends; hosted atomicity was uncited. | FIXED | e4ea97a | ledger.test "fifty different tokens… through Blobs: exactly one wins" (the reviewer's get/sleep/set mutant and a no-`onlyIfNew` mutant both fail it); ledger.test "blobStore opens the ledger strongly consistent and writes only if the key is new" (contract, via an injection seam). kb cites Netlify's docs and says the local BlobsServer and `netlify dev` are not atomic; store.js comment corrected. Hosted atomicity remains Netlify's documented guarantee, not proven by the suite. |
-| A-R2 / A-R10 / A-R19 | Low | kb/findings.md was linked but missing. | FIXED | this file | — |
-| A-R3 | Low | A payment with no saved signature could be stalled for good by flooding its reference, locking that browser out of paying. | FIXED | e4ea97a | verify.test "a full page that still shows the payment is no reason to stall…", "a successful transaction that pays nothing, landed ahead of the payment, does not hide it", "no more than four listed transactions are read per check…"; pay-flow.test "after ten minutes unresolved the customer may give the attempt up…" (abandon, with warning and refund reference) |
-| A-R4 | Low | A spend whose answer was lost could not be recovered after a reload (token held only in memory). | FIXED | e4ea97a | pay-flow.test "the token is saved with the claim before consume is called…", "a saved token is replayed before a newer one…"; pay-page.test "the token is saved before consume, the tab asks before closing mid-spend, and a reload replays it" |
-| A-R5 | Low | verify could return a final 400 judged on a third party's transaction found by reference. | FIXED | e4ea97a | verify.test "the reference listing never gives a verdict: only the page's own transaction, read final, can be refused" |
-| A-R6 | Low | Paid-but-unspent payments from production became unredeemable; the page deleted `vg-pay-ref` silently and DEPLOY said the old records could be deleted. | FIXED | e4ea97a | pay-flow.test "a reference saved by the page before claims is kept…"; pay-page.test "a reference saved by the page before claims is shown with how to get a refund…". DEPLOY: pre-deploy step lists `status: "paid"` records to refund or honour; records kept. Whether any such customers exist needs the production store: NEEDS-ALEX. |
-| A-R7 | Low | An unrecognised wallet error locked the customer out for 3 minutes with a status that said "a few seconds". | FIXED | e4ea97a | funds.test "wallet errors map…" (Blockhash not found and simulation failures are `not_sent`; confirmation timeouts are not); pay-flow.test "while a payment is unseen the page is told how long until it is given up, and why it is waiting"; pay-page.test "while nothing is seen, the status counts down to when paying again is allowed, and says why it waits" |
-| A-R8 | Low | The deploy check's test payment failed as "wrong amount" if made from the payee wallet. | FIXED | e4ea97a | functions.test "the payee cannot pay itself: prepare says to use another wallet, before any RPC call" |
+| A-R1 / A-R11 | Low | Single-spend was tested only in memory; Netlify's local Blobs server double-spends; hosted atomicity was uncited. | FIXED | e4ea97a | ledger.test atomic stand-in and contract tests. Hosted atomicity is Netlify's documented guarantee, not proven by the suite. |
+| A-R2 / A-R10 / A-R19 | Low | kb/findings.md was linked but missing. | FIXED | 07445aa | — |
+| A-R3 | Low | A payment with no saved signature could be stalled for good by flooding its reference. | FIXED (at the root) | e4ea97a, a013fa9 | Paged, resumable cursor search: verify.test "a full page of transactions after the payment cannot hide it…", "a history longer than one call can list is resumed from the cursor…", "a search that started from a cursor never says 'not found'…"; pay-flow.test "a long reference history is followed with the cursor the server returns, across a reload". Residual: four or more successful junk transactions before the payment still give 503; the claim is kept and give-up is offered. |
+| A-R4 | Low | A spend whose answer was lost could not be recovered after a reload. | FIXED | e4ea97a, a013fa9 | pay-flow.test reload-replay tests; pay-page.test reload test |
+| A-R5 | Low | verify could return a 400 judged on a third party's transaction. | FIXED | e4ea97a | verify.test "the reference listing never gives a verdict…" |
+| A-R6 | Low | Unspent production payments became unredeemable. | FIXED | e4ea97a, a013fa9 | Retired-reference tests; reconciliation after the switch, from the chain (`payments.mjs old-payments`, C-R10). Whether such customers exist needs the production store: NEEDS-ALEX. |
+| A-R7 | Low | An unrecognised wallet error locked the customer out for 3 minutes. | FIXED (superseded) | e4ea97a, a013fa9 | The `not_sent` class it added was removed in a013fa9 (C-R1); countdown tests in pay-flow and pay-page |
+| A-R8 | Low | The deploy check's test payment failed if made from the payee wallet. | FIXED | e4ea97a | functions.test "the payee cannot pay itself…" |
 | A-R9 | Low | A DEPLOY check step described behaviour the code does not have. | FIXED | e4ea97a | Docs only |
-| A-R12 | Low | The strong-consistency assertion was deleted without replacement. | FIXED | e4ea97a | ledger.test contract test, and "the winning token's retry is answered from the store itself, not from a cached miss" (an edge cache that keeps misses; dropping `consistency: "strong"` fails both) |
-| A-R13 | Low | pay.js's claim-retention decisions had no behavioural test. | FIXED | e4ea97a | The decisions moved into pay-flow's `pay` and `unlock` (pay-flow.test "a wallet error nobody recognises keeps the claim…", "a wallet that answers after another tab replaced the attempt…", "a saved token is replayed…"); pay-page.test drives pay.js itself |
-| A-R14 | Low | 400/409 without a reason were untested in check() and spend(). | FIXED | e4ea97a | pay-flow.test "a 400 or 409 without its reason, from a proxy or the edge, keeps the claim in check, watch and spend" |
-| A-R15 | Low | A funds assertion was weakened (rent always charged went undetected). | FIXED | e4ea97a | funds.test restores `rentLamports: rent` for existing payee accounts |
-| A-R16 | Info | No typecheck or lint step. | OPEN | — | No tsconfig/eslint in the repo; suggestion only |
-| A-R17 | Info | 8 npm audit advisories (present at base). | OPEN | — | Same as VG-22 |
-| A-R18 | Info | Test servers bind ephemeral loopback ports; gate run on Node 24 only. | OPEN | — | Same as B-R17 |
+| A-R12 | Low | The strong-consistency assertion was deleted without replacement. | FIXED | e4ea97a | ledger.test contract and cached-miss tests |
+| A-R13 | Low | pay.js's claim-retention decisions had no behavioural test. | FIXED | e4ea97a | pay-flow and pay-page tests |
+| A-R14 | Low | 400/409 without a reason were untested in check() and spend(). | FIXED | e4ea97a | pay-flow.test proxy-answer test |
+| A-R15 | Low | A funds assertion was weakened. | FIXED | e4ea97a | funds.test |
+| A-R16 | Info | No typecheck or lint step. | OPEN | — | Suggestion only |
+| A-R17 | Info | 8 npm audit advisories. | FIXED | 9273afb | Same as VG-22 |
+| A-R18 | Info | Test servers bind ephemeral ports; gate run on Node 24 only. | Ports accepted (C-R23); Node 22: CI added | 9d8eba3 | Same as B-R17 |
 
 ## Independent review of edb18ad..824ed25 (B)
 
 | ID | Sev | Finding | Status | Commit | Regression test |
 |---|---|---|---|---|---|
-| B-R1 | Med | The CreateIdempotent check was load-bearing but no test failed when it was removed. | FIXED | e4ea97a | transfer-check.test "the first instruction must be exactly the payee's CreateIdempotent, even over only the expected accounts" (7 pinned-key-only cases, exact reason) |
-| B-R2 / B-R6 / B-R7 / B-R14 | Low | Both netlify.toml comments described the removed DEFAULT_PAY_TO override. | FIXED | e4ea97a | Comments reworded, identical apart from `base` (privacy.test) |
-| B-R3 / B-R4 | Low | The page showed and copied a tip address taken from `/api/quote`. | FIXED | e4ea97a | pay-page.test "the tip address is the bundle's own…"; privacy.test: pay.js has one fetch and never names the tip address or `payTo` |
-| B-R5 | Low | The docs claimed a changed environment could not redirect payments; a build-scoped NODE_OPTIONS still can. | FIXED | e4ea97a | Docs: claim narrowed; DEPLOY pre-deploy step and checklist items for build variables and the bundle's address |
-| B-R8 | Low | No pre-deploy step to check an existing PAY_TO_ADDRESS. | FIXED | e4ea97a | Docs: DEPLOY "Before publishing this version" step 1 |
-| B-R9 | Low | After a payee change, open tabs refused every payment with copy that blamed the server. | FIXED | e4ea97a | pay-page.test "a transfer the page's check refuses is never shown to the wallet, and the visitor is told to reload" |
-| B-R10 / B-R18 | Low | kb/findings.md missing. | FIXED | this file | — |
-| B-R11 | Low | The pre-sign check could be unwired from pay.js with every test green. | FIXED | e4ea97a | pay-flow.test "only the transfer prepare built…", "a transfer that is not exactly the expected one is never handed to the wallet…", "when the page's check cannot run, nothing is signed"; pay-page.test refusal test (removing the check, or letting a throwing check pass, fails them) |
-| B-R12 | Low | No test failed without the instruction-count check. | FIXED | e4ea97a | transfer-check.test "a third instruction over only the expected accounts is refused by the instruction count" |
-| B-R13 | Low | Seven checks could each be deleted with the suite green. | FIXED | e4ea97a | transfer-check.test: every negative assertion is the exact reason; one minimal case per rule. Not isolable: the fee-payer check (unreachable once the signer check passes) and the header's `required > keyCount` clause (always also trips the readonly bound). |
-| B-R15 | Info | The kb said the curve test matches web3.js's isOnCurve; it follows the runtime (zip215) on edge encodings. | FIXED | e4ea97a | transfer-check.test "on edge encodings the curve test follows the runtime's decompress (noble zip215), not web3.js"; kb reworded |
-| B-R16 | Info | The decoder accepted non-canonical compact-u16 lengths. | FIXED | e4ea97a | transfer-check.test "a length the runtime would not read is unreadable, in every length field"; "canonical two- and three-byte lengths still read, up to u16" |
-| B-R17 | Info | The gate ran on Node 24, not the Node 22 production uses. | OPEN | — | Node 22 is not installed here, and fetching it needs the owner's go-ahead. Run the gate on Node 22 before deploying. |
-| B-R19 | Info | 8 npm audit advisories. | OPEN | — | Same as VG-22 |
+| B-R1 | Med | The CreateIdempotent check was load-bearing but untested. | FIXED | e4ea97a | transfer-check.test |
+| B-R2 / B-R6 / B-R7 / B-R14 | Low | Both netlify.toml comments described the removed override. | FIXED | e4ea97a | privacy.test |
+| B-R3 / B-R4 | Low | The page showed and copied a tip address taken from `/api/quote`. | FIXED | e4ea97a | pay-page.test; privacy.test |
+| B-R5 | Low | The docs overclaimed what the payee pin guarantees. | FIXED | e4ea97a | Docs |
+| B-R8 | Low | No pre-deploy step to check an existing PAY_TO_ADDRESS. | FIXED | e4ea97a | DEPLOY step 1 |
+| B-R9 | Low | After a payee change, open tabs refused every payment with copy that blamed the server. | FIXED | e4ea97a | pay-page.test |
+| B-R10 / B-R18 | Low | kb/findings.md missing. | FIXED | 07445aa | — |
+| B-R11 | Low | The pre-sign check could be unwired from pay.js with every test green. | FIXED | e4ea97a | pay-flow and pay-page pre-sign tests |
+| B-R12 | Low | No test failed without the instruction-count check. | FIXED | e4ea97a | transfer-check.test |
+| B-R13 | Low | Seven checks could each be deleted with the suite green. | FIXED | e4ea97a | transfer-check.test exact reasons |
+| B-R15 | Info | The kb's wording about the curve test was wrong on edge encodings. | FIXED | e4ea97a | transfer-check.test |
+| B-R16 | Info | The decoder accepted non-canonical compact-u16 lengths. | FIXED | e4ea97a | transfer-check.test |
+| B-R17 | Info | The gate ran on Node 24, not the Node 22 production uses. | CI added; closes when it runs | 9d8eba3 | `.github/workflows/test.yml`: Node 22, actions pinned by SHA, `permissions: contents: read`, no secrets. Not run yet: nothing pushed. |
+| B-R19 | Info | 8 npm audit advisories. | FIXED | 9273afb | Same as VG-22 |
+
+## Independent review of 07445aa (C, round 3)
+
+| ID | Sev | Finding | Status | Commit | Regression test |
+|---|---|---|---|---|---|
+| C-R1 / C-R4 / C-R5 / C-R9 | Med | "already been processed", "Simulation failed" and "Blockhash not found" were read as proof nothing was sent, clearing the claim of a payment that had landed. | FIXED | a013fa9 | funds.test "wallet errors map…"; pay-flow.test "a resend refused at preflight is no proof nothing was sent: the claim is kept and the payment is found" |
+| C-R2 / C-R6 / C-R11 / C-R17 / C-R22 | Low | The saved token was not tied to its claim: two tabs could get two grinds from one payment, and a stale 409 could wipe a newer claim. | FIXED | a013fa9 | pay-flow.test "a token is only ever spent for the claim it was issued for (two tabs, a stale token, a newer payment)"; "one payment reaches one grind across tabs…"; "…a spend left unanswered is finished by one tab only"; "without Web Locks a lease in storage keeps spends apart…"; "a fresh token fetched while another tab replaced the attempt is never saved onto the new attempt"; pay-page.test "a second tab's grind does not spend a payment this tab already spent…". The lease fallback is best effort. |
+| C-R3 / C-R7 / C-R14 | Low | Refunds were promised with no procedure; a refunded payment could still be redeemed; anyone could ask. | FIXED (support channel NEEDS-ALEX) | a013fa9 | `web/scripts/payments.mjs` (operator-run, never deployed); verify and consume answer 409 refunded; refunds go only to the paying wallet, after 24 h. payments-admin.test.js (27 tests, 13 mutants); verify.test "a payment the operator refunded and marked spent is refused as refunded, by verify and by consume". DEPLOY "Refund requests". |
+| C-R8 | Low | A-R3 not closed at the root. | FIXED | a013fa9 | See A-R3 |
+| C-R10 | Low | DEPLOY step 3 could not list every unredeemed old payment, and ran before the switch. | FIXED | a013fa9 | DEPLOY "Unspent payments from the old version"; payments-admin.test old-payments tests |
+| C-R12 | Low | A saved token skipped watch and the give-up offer. | FIXED | a013fa9 | pay-flow.test "a saved token never strands the browser…" |
+| C-R13 | Low | A given-up payment's refund reference vanished on the next payment or a reload. | FIXED | a013fa9 | pay-flow.test "a given-up payment's reference is kept until the customer hides it…"; pay-page.test give-up test |
+| C-R15 | Low | On phones the reference and signature overflowed. | FIXED | a013fa9 | pay-page.test "on a phone the reference and the transaction wrap and select whole…" |
+| C-R16 | Low | Rotating UNLOCK_SECRET turned a lost-answer spend into "already used". | FIXED | a013fa9 | verify.test "the token that won is answered 'ok' again after UNLOCK_SECRET is rotated; no other token is" (jti match without the MAC, by design) |
+| C-R18 | Low | The abandon UI had no test. | FIXED | a013fa9 | pay-page.test "give-up is offered only after ten minutes unresolved, asks twice, and leaves the reference and transaction to quote" (M1–M3 killed) |
+| C-R19 | Low | The pointed path's final-but-not-served branch was untested. | FIXED | a013fa9 | verify.test "the page's own transaction, final but not served yet, is pending…" |
+| C-R20 | Low | beforeunload during a spend was untested. | FIXED | a013fa9 | pay-page.test "closing the tab while a spend is on its way asks first…" (source assertion) |
+| C-R21 | Low | A regression could hang the suite instead of failing it. | FIXED | a013fa9 | `--test-timeout=60000`; the fake sleep is capped |
+| C-R23 | Info | Test servers bind ephemeral ports. | ACCEPTED | — | Loopback only |
+| C-R24 | Info | Gate verified on Node 24 only. | CI added; closes when it runs | 9d8eba3 | Same as B-R17 |
+| C-R25 | Info | npm audit: 8 advisories. | FIXED | 9273afb | Same as VG-22 |
 
 ## Sweep cross-check
 
@@ -92,19 +113,20 @@ Commits: `07131e5` payment, header and key fixes · `14b5aca` CLI tests and pool
 | S8 | VG-03 | Fixed |
 | S9 | VG-20 | Partly fixed; NEEDS-ALEX |
 | S10, S14 | VG-09 | Fixed |
-| S11 | VG-19 | Fixed (edb18ad, hardened in e4ea97a) |
+| S11 | VG-19 | Fixed |
 | S13, S20 | VG-21 | NEEDS-ALEX (by design) |
 | S15 | VG-12 | Fixed |
 | S16 | VG-24 | Fixed |
 | S17 | VG-25 | Fixed |
 | S18 | VG-18 | Fixed |
-| S21, S22 | VG-22 | Open |
+| S21, S22 | VG-22 | Fixed (9273afb) |
 
 ## Open and owner decisions
 
 - VG-20: turn off or gate deploy previews for fork pull requests.
-- A-R6: before publishing, list the old `status: "paid"` records in `grind-payments` and refund or honour each one (DEPLOY.md, "Before publishing this version").
-- Refund channel: the page tells customers to open an issue on the GitHub repository; confirm that is the support channel you want.
-- B-R17: run the gate on Node 22 before deploying.
-- VG-22: `npm audit fix` for the web3.js transitive dependencies; consider replacing spl-token to drop bigint-buffer.
-- VG-23: two tabs racing on one claim, unresolved.
+- A-R6 / C-R10: after publishing, run `old-payments --until <publish time>` and refund each listed payment (DEPLOY.md, "Unspent payments from the old version"). Keep the old records.
+- Refund channel: the page tells customers to open a GitHub issue; confirm that is the support channel you want.
+- B-R17 / C-R24: push the branch so the CI workflow runs on Node 22.
+- VG-22: accept the jayson 5.0.0 override (outside web3.js's declared ^4.3.0) or pin back.
+- VG-23: the late-send status gap, unresolved (narrowed).
+- A-R16: typecheck/lint, suggestion only.
