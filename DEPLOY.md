@@ -265,6 +265,8 @@ What went back is read over the payee wallet's whole history from `--since` or `
 
 Use the values in the Netlify UI if they differ. Wait until the domain shows a certificate.
 
+Since 2026-11-20 the default host, `vanitygrinder.netlify.app`, answers every page with a 301 to `https://vanitygrinder.com` (the first rules in `web/public/_redirects`, checked by `web/test/build.test.js`); deploy previews, branch deploys and the functions on `/api/` are not redirected.
+
 ## Owner checklist
 
 - [ ] `SOLANA_RPC_URL` and `UNLOCK_SECRET` are set in the Netlify UI and are not in git.

@@ -54,6 +54,49 @@ test("the build writes the headers file, with a rule for the worker it just buil
   }
 });
 
+/** Netlify's redirect rules in the order it applies them: dist/_redirects first, then netlify.toml. */
+function redirectRules() {
+  const rules = [];
+  for (const raw of readDist("_redirects").split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const [from, to, status = "301"] = line.split(/\s+/);
+    rules.push({ source: "_redirects", from, to, status: Number.parseInt(status, 10), force: status.endsWith("!") });
+  }
+  // Base directory web: Netlify reads web/netlify.toml (the root copy must match it, see privacy.test.js).
+  const toml = fs.readFileSync(path.join(root, "netlify.toml"), "utf8");
+  for (const block of toml.split(/^\s*\[\[redirects\]\]\s*$/m).slice(1)) {
+    const field = (name) => block.match(new RegExp(`^\\s*${name}\\s*=\\s*"?([^"\\n]*)"?`, "m"))?.[1];
+    rules.push({
+      source: "netlify.toml",
+      from: field("from"),
+      to: field("to"),
+      status: Number.parseInt(field("status") ?? "301", 10),
+      force: field("force") === "true",
+    });
+  }
+  return rules;
+}
+
+test("the netlify.app host 301s to vanitygrinder.com before any other rule can match", () => {
+  const rules = redirectRules();
+  const hostRules = rules.slice(0, 2);
+  assert.deepEqual(
+    hostRules.map(({ from }) => from).sort(),
+    ["http://vanitygrinder.netlify.app/*", "https://vanitygrinder.netlify.app/*"]
+  );
+  for (const rule of hostRules) {
+    assert.equal(rule.source, "_redirects", rule.from);
+    assert.equal(rule.to, "https://vanitygrinder.com/:splat", rule.from);
+    assert.equal(rule.status, 301, rule.from);
+    assert.equal(rule.force, true, rule.from);
+    // The exact host only: not vanitygrinder.com, not deploy previews or branch deploys.
+    assert.equal(new URL(rule.from.replace(/\*$/, "")).host, "vanitygrinder.netlify.app", rule.from);
+  }
+  for (const rule of rules.slice(2)) assert.doesNotMatch(rule.from, /netlify\.app/, rule.from);
+  assert.equal(readDist("_redirects"), fs.readFileSync(path.join(root, "public", "_redirects"), "utf8"));
+});
+
 test("no published page needs a CSP exception, and each loads code only from this site", () => {
   const pages = fs.readdirSync(dist).filter((name) => name.endsWith(".html"));
   assert.deepEqual(pages.sort(), ["404.html", "index.html"]);

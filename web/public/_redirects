@@ -1,0 +1,10 @@
+# One public address: Netlify's default host for this site answers with a
+# 301 to vanitygrinder.com, path and query kept. The full-URL `from` matches
+# that exact host only, so vanitygrinder.com, deploy previews and branch or
+# unique deploys (deploy-preview-N--vanitygrinder.netlify.app,
+# <hash>--vanitygrinder.netlify.app) are untouched. `!` forces the redirect
+# where a file exists. Keep these first: Netlify reads this file before any
+# rule in netlify.toml and applies the first rule that matches. Functions
+# with a path (/api/*) run before redirects and still answer on that host.
+https://vanitygrinder.netlify.app/*  https://vanitygrinder.com/:splat  301!
+http://vanitygrinder.netlify.app/*   https://vanitygrinder.com/:splat  301!
